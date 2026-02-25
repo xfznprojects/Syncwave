@@ -113,10 +113,8 @@ Real-time pro audio metrics displayed in the Analysis panel:
 
 ### Authentication
 
-- Audius OAuth popup flow — no passwords, no email
-- JWT token decoded client-side
+- Audius OAuth popup flow
 - Session persists in localStorage across refreshes
-- Automatic popup close on successful login
 
 ## Tech Stack
 

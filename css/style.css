@@ -994,6 +994,14 @@ button { cursor: pointer; font-family: inherit; }
   background: var(--accent-hover) !important;
   box-shadow: 0 0 20px rgba(0, 240, 255, 0.6), 0 0 40px rgba(0, 240, 255, 0.2);
 }
+.btn-playpause.is-buffering {
+  animation: buffering-pulse 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes buffering-pulse {
+  0%, 100% { box-shadow: var(--glow-accent); opacity: 1; }
+  50% { box-shadow: 0 0 24px rgba(0, 240, 255, 0.7), 0 0 48px rgba(0, 240, 255, 0.3); opacity: 0.7; }
+}
 
 /* Progress */
 .progress-area {
@@ -1026,6 +1034,26 @@ button { cursor: pointer; font-family: inherit; }
   width: 0%;
   transition: width 0.3s linear;
   box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
+}
+.progress-bar.is-buffering {
+  overflow: visible;
+}
+.progress-bar.is-buffering::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 200% 100%;
+  animation: progress-shimmer 1.5s ease-in-out infinite;
+  opacity: 0.5;
+}
+@keyframes progress-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 .player-bar-right {

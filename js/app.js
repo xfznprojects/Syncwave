@@ -162,6 +162,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   onPlayerEvent('onTimeUpdate', (state) => {
     updateProgress(state);
   });
+  onPlayerEvent('onBuffering', (buffering) => {
+    updateBufferingState(buffering);
+  });
   onPlayerEvent('onQueueChange', (queue, idx) => {
     renderQueue(queue, idx);
     // Don't persist during room exit — clearQueue() fires this with []
@@ -1164,7 +1167,31 @@ async function handleFollow() {
 
 function updatePlayButton(playing) {
   const btn = document.getElementById('btn-playpause');
-  if (btn) btn.innerHTML = playing ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
+  if (!btn) return;
+  // Don't overwrite spinner icon if currently buffering
+  if (btn.classList.contains('is-buffering')) return;
+  btn.innerHTML = playing ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
+}
+
+function updateBufferingState(buffering) {
+  const btn = document.getElementById('btn-playpause');
+  const progressBar = document.getElementById('progress-bar');
+
+  if (buffering) {
+    if (btn) {
+      btn.classList.add('is-buffering');
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    }
+    if (progressBar) progressBar.classList.add('is-buffering');
+  } else {
+    if (btn) {
+      btn.classList.remove('is-buffering');
+      // Restore correct play/pause icon
+      const state = getPlayState();
+      btn.innerHTML = state.playing ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
+    }
+    if (progressBar) progressBar.classList.remove('is-buffering');
+  }
 }
 
 function updateProgress(state) {

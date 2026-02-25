@@ -47,6 +47,13 @@ export function getArtworkUrl(track, size = '480x480') {
   return track.artwork[size] || track.artwork['150x150'] || null;
 }
 
+// Stable fallback content nodes (most reliable on the Audius network)
+const FALLBACK_NODES = [
+  'https://creatornode2.audius.co',
+  'https://creatornode3.audius.co',
+  'https://audius-content-1.figment.io',
+];
+
 // Sets an <img> src with mirror fallback on error.
 export function setArtworkWithFallback(imgEl, track, size = '480x480') {
   if (!track?.artwork) {
@@ -56,16 +63,25 @@ export function setArtworkWithFallback(imgEl, track, size = '480x480') {
   const primary = typeof track.artwork === 'string'
     ? track.artwork
     : (track.artwork[size] || track.artwork['150x150']);
-  const mirrors = (typeof track.artwork === 'object' && track.artwork.mirrors) || [];
+
+  // Build fallback list: API-provided mirrors first, then global fallback nodes
+  const apiMirrors = (typeof track.artwork === 'object' && track.artwork.mirrors) || [];
+  const allMirrors = [...apiMirrors, ...FALLBACK_NODES];
   let mirrorIndex = 0;
 
   imgEl.src = primary || '';
   imgEl.onerror = () => {
-    if (mirrorIndex < mirrors.length && primary) {
+    if (!primary) return;
+    try {
       const url = new URL(primary);
-      const mirrorBase = mirrors[mirrorIndex++];
-      imgEl.src = mirrorBase + url.pathname;
-    }
+      while (mirrorIndex < allMirrors.length) {
+        const mirrorBase = allMirrors[mirrorIndex++];
+        // Skip if the failing URL is already from this mirror
+        if (primary.startsWith(mirrorBase)) continue;
+        imgEl.src = mirrorBase + url.pathname;
+        return;
+      }
+    } catch { /* invalid URL, give up */ }
   };
 }
 

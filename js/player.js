@@ -22,6 +22,7 @@ const listeners = {
   onPlayStateChange: null,
   onTimeUpdate: null,
   onQueueChange: null,
+  onBuffering: null,
 };
 
 export function onPlayerEvent(event, callback) {
@@ -50,6 +51,23 @@ export function initPlayer() {
 
   audio.addEventListener('ended', () => {
     playNext();
+  });
+
+  // Buffering state events
+  audio.addEventListener('waiting', () => {
+    if (listeners.onBuffering) listeners.onBuffering(true);
+  });
+  audio.addEventListener('loadstart', () => {
+    if (listeners.onBuffering) listeners.onBuffering(true);
+  });
+  audio.addEventListener('canplay', () => {
+    if (listeners.onBuffering) listeners.onBuffering(false);
+  });
+  audio.addEventListener('playing', () => {
+    if (listeners.onBuffering) listeners.onBuffering(false);
+  });
+  audio.addEventListener('error', () => {
+    if (listeners.onBuffering) listeners.onBuffering(false);
   });
 
   return audio;

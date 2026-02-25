@@ -51,24 +51,22 @@ exports.handler = async (event) => {
   // Read secrets from environment (never sent to client)
   const apiKey = process.env.AUDIUS_API_KEY;
   const apiSecret = process.env.AUDIUS_API_SECRET;
-  if (!apiKey || !apiSecret) {
+  const bearerToken = process.env.AUDIUS_BEARER_TOKEN;
+  if (!apiKey || (!apiSecret && !bearerToken)) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Server misconfigured — missing Audius credentials' }) };
   }
-
-  // Forward the user's OAuth token if provided (needed for write operations)
-  const authHeader = event.headers['authorization'] || event.headers['Authorization'] || '';
 
   // Build the Audius API request
   const apiPath = actionDef.path({ userId, trackId, targetUserId });
   const url = `${AUDIUS_API_BASE}${apiPath}`;
 
+  // Use Bearer token if available (preferred, rotatable), otherwise fall back to API secret
   try {
-    const fetchHeaders = {
-      'x-api-key': apiKey,
-      'x-api-secret': apiSecret,
-    };
-    if (authHeader) {
-      fetchHeaders['Authorization'] = authHeader;
+    const fetchHeaders = { 'x-api-key': apiKey };
+    if (bearerToken) {
+      fetchHeaders['Authorization'] = `Bearer ${bearerToken}`;
+    } else {
+      fetchHeaders['x-api-secret'] = apiSecret;
     }
 
     const res = await fetch(url, {

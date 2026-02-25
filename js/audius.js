@@ -142,15 +142,9 @@ export function getUserAvatar(user, size = '150x150') {
 // through /.netlify/functions/audius-action which holds the secret server-side.
 
 async function proxyAction(action, params) {
-  // Import token dynamically to avoid circular dependency
-  const { getToken } = await import('./auth.js');
-  const token = getToken();
-  const reqHeaders = { 'Content-Type': 'application/json' };
-  if (token) reqHeaders['Authorization'] = `Bearer ${token}`;
-
   const res = await fetch('/.netlify/functions/audius-action', {
     method: 'POST',
-    headers: reqHeaders,
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...params }),
   });
   if (!res.ok) {

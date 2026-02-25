@@ -66,8 +66,9 @@
     <div class="room-layout">
 
       <!-- LEFT: Chat -->
+      <button class="btn-expand btn-expand-left hidden" id="expand-chat" title="Expand chat">&#10094;</button>
       <div class="room-panel panel-chat tab-panel" data-panel="chat">
-        <div class="panel-header">Chat</div>
+        <div class="panel-header">Chat <button class="btn-collapse" data-collapse="chat" title="Collapse">&#10094;</button></div>
         <div id="chat-messages" class="chat-messages"></div>
         <div class="chat-input-area">
           <button id="gif-btn" class="btn-icon" title="Send GIF">GIF</button>
@@ -113,20 +114,31 @@
           <button id="btn-playpause" class="btn-icon btn-playpause" title="Play/Pause">&#9654;</button>
           <button id="btn-next" class="btn-icon" title="Next">&#9197;</button>
           <button id="btn-viz-mode" class="btn-icon" title="Change visualizer">&#127912;</button>
+          <div class="volume-control">
+            <button id="btn-mute" class="btn-icon" title="Mute">&#128264;</button>
+            <input id="volume-slider" type="range" min="0" max="100" value="80" class="volume-slider">
+          </div>
         </div>
 
-        <!-- Search (used by both host and guests) -->
+        <!-- Search with tabs -->
         <div class="search-area">
-          <input id="search-input" type="text" class="input" placeholder="Search Audius tracks...">
+          <div class="search-tabs">
+            <button class="search-tab active" data-search-tab="trending">Trending</button>
+            <button class="search-tab" data-search-tab="search">Search</button>
+            <button class="search-tab" data-search-tab="mytracks" id="tab-mytracks" style="display:none">My Tracks</button>
+            <button class="search-tab" data-search-tab="favorites" id="tab-favorites" style="display:none">Favorites</button>
+          </div>
+          <input id="search-input" type="text" class="input" placeholder="Search Audius tracks..." style="display:none">
           <div id="search-results" class="search-results"></div>
         </div>
       </div>
 
       <!-- RIGHT: Queue + Listeners + Requests -->
+        <button class="btn-expand btn-expand-right hidden" id="expand-sidebar" title="Expand sidebar">&#10095;</button>
       <div class="room-panel panel-sidebar">
         <!-- Listeners -->
         <div class="sidebar-section tab-panel" data-panel="listeners">
-          <div class="panel-header">Listeners</div>
+          <div class="panel-header">Listeners <button class="btn-collapse" data-collapse="sidebar" title="Collapse">&#10095;</button></div>
           <div id="listeners-list" class="listeners-list"></div>
         </div>
 

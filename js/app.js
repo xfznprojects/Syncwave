@@ -1,5 +1,5 @@
 import CONFIG from './config.js';
-import { searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback } from './audius.js';
+import { searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, getUserTracks, getUserFavorites } from './audius.js';
 import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout } from './auth.js';
 import {
   createRoom, joinRoom, leaveRoom, broadcast, onRoomEvent,
@@ -10,7 +10,7 @@ import {
   getCurrentTrack, getPlayState, getQueue, addToQueue, removeFromQueue,
   playNext, playPrevious, playFromQueue, toggleShuffle, isShuffled,
   onPlayerEvent, handleSync, handleTrackChange, getAnalyser, resumeAudioContext,
-  stopSyncLoop, destroy as destroyPlayer,
+  stopSyncLoop, destroy as destroyPlayer, setVolume, getVolume,
 } from './player.js';
 import { initVisualizer, startVisualizer, stopVisualizer, cycleMode, getMode, destroy as destroyVis } from './visualizer.js';
 import {
@@ -281,6 +281,9 @@ async function enterRoom(roomId) {
   // Setup request functionality
   setupRequests();
 
+  // Setup collapsible panels
+  setupCollapsiblePanels();
+
   // Start lobby announcements if host
   if (getIsHost()) {
     startAnnouncing(roomId);
@@ -300,35 +303,82 @@ function exitRoom() {
   songRequests = [];
 }
 
-// ─── SEARCH ─────────────────────────────────────────────────
+// ─── SEARCH WITH TABS ───────────────────────────────────────
 
 let searchTimeout = null;
+let activeSearchTab = 'trending';
 
 function setupSearch() {
   const input = document.getElementById('search-input');
-  if (!input) return;
+  const tabs = document.querySelectorAll('.search-tab');
 
-  input.addEventListener('input', () => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(async () => {
-      const query = input.value.trim();
-      if (query.length >= 2) {
-        const results = await searchTracks(query);
-        renderSearchResults(results);
-      } else if (query.length === 0) {
-        loadTrending();
-      }
-    }, 300);
+  // Show My Tracks / Favorites tabs for logged-in users
+  if (isLoggedIn()) {
+    const myTracksTab = document.getElementById('tab-mytracks');
+    const favoritesTab = document.getElementById('tab-favorites');
+    if (myTracksTab) myTracksTab.style.display = '';
+    if (favoritesTab) favoritesTab.style.display = '';
+  }
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      activeSearchTab = tab.dataset.searchTab;
+
+      // Show/hide search input
+      if (input) input.style.display = activeSearchTab === 'search' ? '' : 'none';
+
+      // Load content for tab
+      if (activeSearchTab === 'trending') loadTrending();
+      else if (activeSearchTab === 'search') { input.focus(); if (input.value.trim()) triggerSearch(input.value.trim()); }
+      else if (activeSearchTab === 'mytracks') loadMyTracks();
+      else if (activeSearchTab === 'favorites') loadFavorites();
+    });
   });
+
+  if (input) {
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        triggerSearch(input.value.trim());
+      }, 300);
+    });
+  }
+}
+
+async function triggerSearch(query) {
+  if (query.length >= 2) {
+    const results = await searchTracks(query);
+    renderSearchResults(results, 'Search Results');
+  }
 }
 
 async function loadTrending() {
   try {
     const trending = await getTrending();
     renderSearchResults(trending, 'Trending on Audius');
-  } catch {
-    // Silently fail — trending is optional
-  }
+  } catch { /* optional */ }
+}
+
+async function loadMyTracks() {
+  const user = getCurrentUser();
+  if (!user) return;
+  try {
+    const tracks = await getUserTracks(user.userId);
+    renderSearchResults(tracks, 'My Tracks');
+  } catch { renderSearchResults([], 'My Tracks'); }
+}
+
+async function loadFavorites() {
+  const user = getCurrentUser();
+  if (!user) return;
+  try {
+    const favs = await getUserFavorites(user.userId);
+    // Favorites API wraps tracks in a `favorite_item` — extract the track
+    const tracks = favs.map(f => f.favorite_item || f).filter(t => t.id);
+    renderSearchResults(tracks, 'Favorites');
+  } catch { renderSearchResults([], 'Favorites'); }
 }
 
 function renderSearchResults(tracks, label = 'Search Results') {
@@ -372,8 +422,14 @@ function renderSearchResults(tracks, label = 'Search Results') {
   container.querySelectorAll('.btn-play-now').forEach((btn, i) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      const wasEmpty = getQueue().length === 0;
       addToQueue(tracks[i]);
-      playFromQueue(getQueue().length - 1);
+      // Only force-play if nothing was playing; otherwise addToQueue handles auto-start
+      if (wasEmpty) {
+        playFromQueue(0);
+      } else {
+        showToast(`Added "${tracks[i].title}" — plays next`);
+      }
     });
   });
 
@@ -436,6 +492,8 @@ function setupPlayerControls() {
   const shuffleBtn = document.getElementById('btn-shuffle');
   const vizBtn = document.getElementById('btn-viz-mode');
   const progressBar = document.getElementById('progress-bar');
+  const volumeSlider = document.getElementById('volume-slider');
+  const muteBtn = document.getElementById('btn-mute');
 
   if (playPauseBtn) {
     playPauseBtn.addEventListener('click', () => {
@@ -468,6 +526,69 @@ function setupPlayerControls() {
       const pct = (e.clientX - rect.left) / rect.width;
       const state = getPlayState();
       if (state.duration > 0) seek(pct * state.duration);
+    });
+  }
+
+  // Volume
+  let savedVolume = 0.8;
+  if (volumeSlider) {
+    setVolume(0.8);
+    volumeSlider.addEventListener('input', () => {
+      const vol = parseInt(volumeSlider.value) / 100;
+      setVolume(vol);
+      savedVolume = vol;
+      if (muteBtn) muteBtn.innerHTML = vol === 0 ? '&#128263;' : vol < 0.5 ? '&#128265;' : '&#128264;';
+    });
+  }
+
+  if (muteBtn) {
+    muteBtn.addEventListener('click', () => {
+      const current = getVolume();
+      if (current > 0) {
+        savedVolume = current;
+        setVolume(0);
+        if (volumeSlider) volumeSlider.value = 0;
+        muteBtn.innerHTML = '&#128263;';
+      } else {
+        setVolume(savedVolume || 0.8);
+        if (volumeSlider) volumeSlider.value = Math.round((savedVolume || 0.8) * 100);
+        muteBtn.innerHTML = savedVolume < 0.5 ? '&#128265;' : '&#128264;';
+      }
+    });
+  }
+}
+
+// ─── COLLAPSIBLE PANELS ─────────────────────────────────────
+
+function setupCollapsiblePanels() {
+  const layout = document.querySelector('.room-layout');
+  const expandChat = document.getElementById('expand-chat');
+  const expandSidebar = document.getElementById('expand-sidebar');
+
+  document.querySelectorAll('.btn-collapse').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.collapse;
+      if (target === 'chat') {
+        layout.classList.add('chat-collapsed');
+        if (expandChat) expandChat.classList.remove('hidden');
+      } else if (target === 'sidebar') {
+        layout.classList.add('sidebar-collapsed');
+        if (expandSidebar) expandSidebar.classList.remove('hidden');
+      }
+    });
+  });
+
+  if (expandChat) {
+    expandChat.addEventListener('click', () => {
+      layout.classList.remove('chat-collapsed');
+      expandChat.classList.add('hidden');
+    });
+  }
+
+  if (expandSidebar) {
+    expandSidebar.addEventListener('click', () => {
+      layout.classList.remove('sidebar-collapsed');
+      expandSidebar.classList.add('hidden');
     });
   }
 }

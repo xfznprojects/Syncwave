@@ -137,6 +137,15 @@ export function seek(time) {
   if (getIsHost()) broadcastSync();
 }
 
+export function setVolume(vol) {
+  if (!audio) return;
+  audio.volume = Math.max(0, Math.min(1, vol));
+}
+
+export function getVolume() {
+  return audio ? audio.volume : 1;
+}
+
 export function getCurrentTrack() {
   return currentTrack;
 }
@@ -160,9 +169,14 @@ export function getCurrentIndex() {
 
 export function addToQueue(track) {
   queue.push(track);
+  // If nothing is playing yet, start playing the first track
+  if (currentIndex === -1) {
+    currentIndex = 0;
+    playTrack(queue[0]);
+  }
   if (listeners.onQueueChange) listeners.onQueueChange(queue, currentIndex);
   if (getIsHost()) {
-    broadcast('track-change', { queue: queue.map(serializeTrack), currentIndex });
+    broadcastSync();
   }
 }
 

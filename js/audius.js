@@ -65,6 +65,16 @@ export function setArtworkWithFallback(imgEl, track, size = '480x480') {
   };
 }
 
+export async function getUserTracks(userId, limit = 20) {
+  const data = await apiFetch(`/users/${userId}/tracks?limit=${limit}`);
+  return data.data || [];
+}
+
+export async function getUserFavorites(userId, limit = 20) {
+  const data = await apiFetch(`/users/${userId}/favorites?limit=${limit}`);
+  return data.data || [];
+}
+
 // Get user avatar URL from profile picture object
 export function getUserAvatar(user, size = '150x150') {
   if (!user?.profile_picture) return null;

@@ -15,7 +15,7 @@ import {
   onPlayerEvent, handleSync, handleTrackChange, getAnalyser, resumeAudioContext,
   stopSyncLoop, destroy as destroyPlayer, setVolume, getVolume,
   moveInQueue, loadQueueFromData, getAudioElement,
-  startDeterministicSync, stopDeterministicSync,
+  startDeterministicSync, stopDeterministicSync, calculateDeterministicPosition,
 } from './player.js';
 import { initVisualizer, startVisualizer as startVis2D, stopVisualizer as stopVis2D, cycleMode, getMode, destroy as destroyVis2D } from './visualizer.js';
 import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D } from './visualizer3d.js';
@@ -30,7 +30,7 @@ import { initWaveform, startWaveform, stopWaveform, zoomIn, zoomOut, getZoomLeve
 import {
   savePlaylist as dbSavePlaylist, loadPlaylist as dbLoadPlaylist,
   saveChatMessage as dbSaveChatMessage, loadChatHistory as dbLoadChatHistory,
-  saveRoom as dbSaveRoom, saveRoomImmediate as dbSaveRoomImmediate, updateRoomUserCount as dbUpdateRoomUserCount,
+  saveRoom as dbSaveRoom, saveRoomImmediate as dbSaveRoomImmediate, updateRoomUserCount as dbUpdateRoomUserCount, updateRoomCurrentTrack as dbUpdateRoomCurrentTrack,
   loadActiveRooms as dbLoadActiveRooms, loadInactiveRooms as dbLoadInactiveRooms,
   loadRoomPlaylist as dbLoadRoomPlaylist, loadRoomMutedUsers as dbLoadRoomMutedUsers, loadRoomBannedUsers as dbLoadRoomBannedUsers,
   loadRoom as dbLoadRoom, loadPermanentRooms as dbLoadPermanentRooms,
@@ -103,10 +103,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Room events
   onRoomEvent('onSync', handleSync);
   onRoomEvent('onChat', (msg) => {
-    // Don't render or save messages from muted/kicked users
+    // Don't render messages from muted/kicked users
     if (mutedUsers.has(msg.userId)) return;
     handleIncomingMessage(msg);
-    if (currentRoomIdForChat) dbSaveChatMessage(currentRoomIdForChat, msg);
+    // NOTE: Don't save to DB here — the SENDER already saves on their side.
+    // Saving here too would create duplicates (every listener writes the same message).
   });
   onRoomEvent('onTrackChange', handleTrackChange);
   onRoomEvent('onSongRequest', (data) => {
@@ -154,8 +155,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     startAnalysis();
     // Re-render queue to update highlight on active track
     renderQueue(getQueue(), getCurrentIndex());
-    // Persist room to DB on track change (host only)
+    // Persist room to DB on track change (host persists full state)
     persistRoomToDB();
+    // Non-host: update current_track in DB so directory shows what's playing in hostless rooms
+    if (!getIsHost() && track) {
+      const trackRoomId = getRoomId();
+      if (trackRoomId) {
+        dbUpdateRoomCurrentTrack(trackRoomId, { title: track.title, artist: track.user?.name || '' });
+      }
+    }
   });
   onPlayerEvent('onPlayStateChange', (playing) => {
     updatePlayButton(playing);
@@ -324,6 +332,24 @@ async function renderFullDirectory() {
   if (permanentGrid && permanentSection) {
     try {
       const permanentRooms = await dbLoadPermanentRooms();
+      // For permanent rooms, calculate the current track deterministically
+      // so the directory always shows what's playing — even with no listeners
+      for (const room of permanentRooms) {
+        const pl = Array.isArray(room.playlist) ? room.playlist : [];
+        if (pl.length > 0) {
+          let refTime, refIndex = 0, refPosition = 0;
+          if (room.playbackState) {
+            const ps = typeof room.playbackState === 'string' ? JSON.parse(room.playbackState) : room.playbackState;
+            if (ps.savedAt) { refTime = ps.savedAt; refIndex = ps.trackIndex || 0; refPosition = ps.position || 0; }
+          }
+          if (!refTime) refTime = room.createdAt ? new Date(room.createdAt).getTime() : Date.now();
+          const pos = calculateDeterministicPosition(pl, refTime, refIndex, refPosition);
+          if (pos && pl[pos.trackIndex]) {
+            const t = pl[pos.trackIndex];
+            room.currentTrack = { title: t.title, artist: t.user?.name || '' };
+          }
+        }
+      }
       if (permanentRooms.length > 0) {
         permanentRoomIds = new Set(permanentRooms.map(r => r.roomId));
         permanentSection.classList.remove('hidden');

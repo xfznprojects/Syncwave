@@ -842,6 +842,7 @@ button { cursor: pointer; font-family: inherit; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   width: 100%;
+  position: relative;
 }
 
 .player-bar-left {
@@ -953,13 +954,19 @@ button { cursor: pointer; font-family: inherit; }
 }
 
 .player-bar-center {
-  flex: 1;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  width: 100%;
   max-width: 600px;
-  margin: 0 auto;
+  pointer-events: none;
+}
+.player-bar-center > * {
+  pointer-events: auto;
 }
 
 /* Controls */
@@ -1061,6 +1068,7 @@ button { cursor: pointer; font-family: inherit; }
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
 /* Volume */
@@ -1916,6 +1924,13 @@ button { cursor: pointer; font-family: inherit; }
     padding: 6px 10px;
     gap: 8px;
   }
+  .player-bar-center {
+    position: static;
+    transform: none;
+    flex: 1;
+    pointer-events: auto;
+  }
+  .player-bar-right { margin-left: 0; }
   .player-bar-left { min-width: 80px; max-width: 140px; }
   .player-bar-artwork-wrap { width: 40px; height: 40px; }
   .player-bar-artwork { width: 40px; height: 40px; }

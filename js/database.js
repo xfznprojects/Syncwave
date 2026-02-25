@@ -134,6 +134,18 @@ export async function updateRoomUserCount(roomId, userCount) {
   }
 }
 
+export async function updateRoomCurrentTrack(roomId, currentTrack) {
+  try {
+    const client = getClient();
+    await client
+      .from('rooms')
+      .update({ current_track: currentTrack, last_active_at: new Date().toISOString() })
+      .eq('room_id', roomId);
+  } catch (e) {
+    console.warn('Failed to update room current track:', e);
+  }
+}
+
 export async function loadActiveRooms(limit = 20) {
   try {
     const client = getClient();

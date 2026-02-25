@@ -26,6 +26,7 @@
         <span class="logo-icon"><i class="fa-solid fa-wave-square"></i></span>
         <span class="logo-text">SyncWave</span>
       </a>
+      <span id="header-room-title" class="header-room-title hidden"></span>
     </div>
     <div class="header-right">
       <span id="auth-name" class="auth-name hidden"></span>
@@ -49,28 +50,24 @@
     </section>
 
     <section class="room-directory">
-      <h2>Active Rooms</h2>
-      <div id="room-grid" class="room-grid">
+      <h2><i class="fa-solid fa-circle room-status-dot active"></i> Active Rooms</h2>
+      <div id="room-grid-active" class="room-grid">
         <div class="empty-state">
           <p>No active rooms right now</p>
           <p>Log in with Audius to create one!</p>
         </div>
       </div>
     </section>
+
+    <section id="inactive-rooms-section" class="room-directory room-directory-inactive hidden">
+      <h2><i class="fa-solid fa-circle room-status-dot inactive"></i> Recent Rooms</h2>
+      <div id="room-grid-inactive" class="room-grid"></div>
+    </section>
   </main>
 
   <!-- ─── ROOM VIEW ──────────────────────────────────────── -->
   <main id="room-view" class="view hidden">
 
-    <!-- Room Header -->
-    <div class="room-header">
-      <a href="#/" class="btn-back" title="Leave room"><i class="fa-solid fa-arrow-left"></i></a>
-      <h2 id="room-title" class="room-title">Room</h2>
-      <div class="room-meta">
-        <span class="listener-icon"><i class="fa-solid fa-headphones"></i></span>
-        <span id="listener-count">0</span>
-      </div>
-    </div>
 
     <!-- Desktop Layout: 3-column -->
     <div class="room-layout">
@@ -81,13 +78,21 @@
         <div class="panel-header"><i class="fa-solid fa-comments panel-header-icon"></i> Chat <button class="btn-collapse" data-collapse="chat" title="Collapse"><i class="fa-solid fa-chevron-left"></i></button></div>
         <div id="chat-messages" class="chat-messages"></div>
         <div class="chat-input-area">
-          <button id="gif-btn" class="btn-icon" title="Send GIF"><i class="fa-solid fa-image"></i></button>
-          <input id="chat-input" type="text" class="input chat-input" placeholder="Type a message...">
-          <button id="chat-send-btn" class="btn-icon" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
+          <div class="chat-input-wrap">
+            <button id="gif-btn" class="chat-input-addon" title="Send GIF"><i class="fa-solid fa-image"></i></button>
+            <input id="chat-input" type="text" class="input chat-input" placeholder="Type a message...">
+            <button id="chat-send-btn" class="chat-input-addon" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
         </div>
         <!-- GIF Picker -->
         <div id="gif-picker" class="gif-picker hidden">
-          <input id="gif-search-input" type="text" class="input" placeholder="Search GIFs...">
+          <div class="gif-picker-header">
+            <div class="gif-search-row">
+              <input id="gif-search-input" type="text" class="input" placeholder="Search GIFs...">
+              <button id="gif-search-btn" class="btn btn-primary btn-sm" title="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
+            </div>
+            <div id="gif-trending-tags" class="gif-trending-tags"></div>
+          </div>
           <div id="gif-picker-grid" class="gif-picker-grid"></div>
         </div>
       </div>
@@ -98,6 +103,7 @@
         <div class="visualizer-wrap">
           <div id="visualizer-3d" class="visualizer-3d"></div>
           <canvas id="visualizer-canvas" class="visualizer-2d"></canvas>
+          <button id="btn-viz-mode" class="btn-viz-overlay" title="Change visualizer"><i class="fa-solid fa-display"></i></button>
         </div>
 
         <!-- Inline Player Bar (between chat and sidebar) -->
@@ -116,7 +122,6 @@
               <button id="btn-prev" class="btn-icon" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
               <button id="btn-playpause" class="btn-icon btn-playpause" title="Play/Pause"><i class="fa-solid fa-play"></i></button>
               <button id="btn-next" class="btn-icon" title="Next"><i class="fa-solid fa-forward-step"></i></button>
-              <button id="btn-viz-mode" class="btn-icon" title="Change visualizer"><i class="fa-solid fa-display"></i></button>
             </div>
             <div class="progress-area">
               <span id="progress-time" class="progress-time">0:00</span>
@@ -141,7 +146,7 @@
         <!-- Listeners (accordion) -->
         <div class="sidebar-section" data-panel="listeners">
           <div class="panel-header accordion-header" data-accordion="listeners">
-            <i class="fa-solid fa-users panel-header-icon"></i> Listeners <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+            <i class="fa-solid fa-users panel-header-icon"></i> Listeners <span id="listener-count" class="listener-count-badge">0</span> <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
             <button class="btn-collapse" data-collapse="sidebar" title="Collapse"><i class="fa-solid fa-chevron-right"></i></button>
           </div>
           <div class="accordion-body open" data-accordion-body="listeners">

@@ -7,6 +7,10 @@ let onUpdateCallback = null;
 let energyBuffer = [];
 const ENERGY_BUFFER_SIZE = 200; // ~20 seconds at 100ms intervals
 
+// Reusable typed array buffers (avoid allocating every 100ms)
+let freqDataBuf = null;
+let timeDataBuf = null;
+
 // BPM detection state
 let lastBpm = null;
 let bpmConfidence = 0;
@@ -73,8 +77,15 @@ function analyze() {
   const analyser = getAnalyser();
   if (!analyser) return;
 
-  const freqData = new Uint8Array(analyser.frequencyBinCount);
-  const timeData = new Uint8Array(analyser.fftSize);
+  // Reuse buffers — only reallocate if analyser size changed
+  if (!freqDataBuf || freqDataBuf.length !== analyser.frequencyBinCount) {
+    freqDataBuf = new Uint8Array(analyser.frequencyBinCount);
+  }
+  if (!timeDataBuf || timeDataBuf.length !== analyser.fftSize) {
+    timeDataBuf = new Uint8Array(analyser.fftSize);
+  }
+  const freqData = freqDataBuf;
+  const timeData = timeDataBuf;
   analyser.getByteFrequencyData(freqData);
   analyser.getByteTimeDomainData(timeData);
 

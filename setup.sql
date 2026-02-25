@@ -47,12 +47,30 @@ CREATE INDEX IF NOT EXISTS idx_chat_room_timestamp
 -- END;
 -- $$ LANGUAGE plpgsql;
 
+-- ─── ROOMS TABLE ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS rooms (
+  room_id TEXT PRIMARY KEY,
+  host_name TEXT,
+  host_handle TEXT,
+  host_avatar TEXT,
+  current_track JSONB,
+  user_count INTEGER DEFAULT 0,
+  playlist JSONB DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  last_active_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Index for loading rooms ordered by activity
+CREATE INDEX IF NOT EXISTS idx_rooms_last_active
+  ON rooms (last_active_at DESC);
+
 -- ─── ROW LEVEL SECURITY ──────────────────────────────────
 -- Using permissive policies since we authenticate via Audius OAuth,
 -- not Supabase Auth. All operations go through the anon key.
 
 ALTER TABLE playlists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rooms ENABLE ROW LEVEL SECURITY;
 
 -- Allow all operations for playlists
 CREATE POLICY "Allow all playlist operations" ON playlists
@@ -60,4 +78,8 @@ CREATE POLICY "Allow all playlist operations" ON playlists
 
 -- Allow all operations for chat messages
 CREATE POLICY "Allow all chat operations" ON chat_messages
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- Allow all operations for rooms
+CREATE POLICY "Allow all room operations" ON rooms
   FOR ALL USING (true) WITH CHECK (true);

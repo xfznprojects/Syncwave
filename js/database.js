@@ -69,6 +69,121 @@ export async function loadPlaylist(userId) {
   return null;
 }
 
+// ─── ROOM PERSISTENCE ────────────────────────────────────
+
+let roomSaveTimeout = null;
+
+export async function saveRoom(roomData) {
+  // Debounce: wait 2 seconds after last call
+  clearTimeout(roomSaveTimeout);
+  return new Promise((resolve) => {
+    roomSaveTimeout = setTimeout(async () => {
+      try {
+        const client = getClient();
+        const { error } = await client
+          .from('rooms')
+          .upsert({
+            room_id: roomData.roomId,
+            host_name: roomData.hostName || null,
+            host_handle: roomData.hostHandle || null,
+            host_avatar: roomData.hostAvatar || null,
+            current_track: roomData.currentTrack || null,
+            user_count: roomData.userCount || 0,
+            playlist: roomData.playlist ? JSON.stringify(roomData.playlist) : '[]',
+            last_active_at: new Date().toISOString(),
+          }, { onConflict: 'room_id' });
+
+        if (error) throw error;
+        resolve(true);
+      } catch (e) {
+        console.warn('Failed to save room to Supabase:', e);
+        resolve(false);
+      }
+    }, 2000);
+  });
+}
+
+export async function updateRoomUserCount(roomId, userCount) {
+  try {
+    const client = getClient();
+    await client
+      .from('rooms')
+      .update({ user_count: userCount, last_active_at: new Date().toISOString() })
+      .eq('room_id', roomId);
+  } catch (e) {
+    console.warn('Failed to update room user count:', e);
+  }
+}
+
+export async function loadActiveRooms(limit = 20) {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('rooms')
+      .select('*')
+      .gt('user_count', 0)
+      .order('user_count', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return (data || []).map(mapRoomRow);
+  } catch (e) {
+    console.warn('Failed to load active rooms:', e);
+    return [];
+  }
+}
+
+export async function loadInactiveRooms(limit = 10) {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('rooms')
+      .select('*')
+      .eq('user_count', 0)
+      .order('last_active_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return (data || []).map(mapRoomRow);
+  } catch (e) {
+    console.warn('Failed to load inactive rooms:', e);
+    return [];
+  }
+}
+
+export async function loadRoomPlaylist(roomId) {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('rooms')
+      .select('playlist')
+      .eq('room_id', roomId)
+      .single();
+
+    if (error) throw error;
+    if (data?.playlist) {
+      return typeof data.playlist === 'string' ? JSON.parse(data.playlist) : data.playlist;
+    }
+  } catch (e) {
+    console.warn('Failed to load room playlist:', e);
+  }
+  return null;
+}
+
+function mapRoomRow(row) {
+  return {
+    roomId: row.room_id,
+    hostName: row.host_name,
+    hostHandle: row.host_handle,
+    hostAvatar: row.host_avatar,
+    currentTrack: row.current_track,
+    userCount: row.user_count,
+    playlist: row.playlist,
+    lastActiveAt: row.last_active_at,
+    createdAt: row.created_at,
+  };
+}
+
 // ─── CHAT PERSISTENCE ────────────────────────────────────
 
 export async function saveChatMessage(roomId, message) {

@@ -173,7 +173,7 @@ function renderMessage(msg) {
 export async function searchGifs(query) {
   if (!CONFIG.TENOR_API_KEY || !query.trim()) return [];
 
-  const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${CONFIG.TENOR_API_KEY}&limit=20&media_filter=gif,tinygif`;
+  const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${CONFIG.TENOR_API_KEY}&limit=30&media_filter=gif,tinygif`;
 
   try {
     const res = await fetch(url);
@@ -184,6 +184,7 @@ export async function searchGifs(query) {
       url: r.media_formats?.gif?.url || '',
       preview: r.media_formats?.tinygif?.url || r.media_formats?.gif?.url || '',
       description: r.content_description || '',
+      dims: r.media_formats?.tinygif?.dims || r.media_formats?.gif?.dims || [200, 200],
     }));
   } catch {
     return [];
@@ -193,7 +194,7 @@ export async function searchGifs(query) {
 export async function getTrendingGifs() {
   if (!CONFIG.TENOR_API_KEY) return [];
 
-  const url = `https://tenor.googleapis.com/v2/featured?key=${CONFIG.TENOR_API_KEY}&limit=20&media_filter=gif,tinygif`;
+  const url = `https://tenor.googleapis.com/v2/featured?key=${CONFIG.TENOR_API_KEY}&limit=30&media_filter=gif,tinygif`;
 
   try {
     const res = await fetch(url);
@@ -204,7 +205,23 @@ export async function getTrendingGifs() {
       url: r.media_formats?.gif?.url || '',
       preview: r.media_formats?.tinygif?.url || r.media_formats?.gif?.url || '',
       description: r.content_description || '',
+      dims: r.media_formats?.tinygif?.dims || r.media_formats?.gif?.dims || [200, 200],
     }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getTrendingTerms() {
+  if (!CONFIG.TENOR_API_KEY) return [];
+
+  const url = `https://tenor.googleapis.com/v2/trending_terms?key=${CONFIG.TENOR_API_KEY}&limit=10`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.results || [];
   } catch {
     return [];
   }
@@ -213,11 +230,19 @@ export async function getTrendingGifs() {
 export function renderGifPicker(gifs, onSelect) {
   if (!gifPickerEl) return;
 
-  gifPickerEl.innerHTML = gifs.map(gif => `
-    <div class="gif-item" data-url="${escapeHtml(gif.url)}" data-preview="${escapeHtml(gif.preview)}">
+  if (gifs.length === 0) {
+    gifPickerEl.innerHTML = '<div class="gif-empty">No GIFs found</div>';
+    return;
+  }
+
+  gifPickerEl.innerHTML = gifs.map(gif => {
+    const [w, h] = gif.dims || [200, 200];
+    const ratio = w && h ? (w / h).toFixed(3) : '1';
+    return `
+    <div class="gif-item" data-url="${escapeHtml(gif.url)}" data-preview="${escapeHtml(gif.preview)}" style="aspect-ratio:${ratio}">
       <img src="${escapeHtml(gif.preview)}" alt="${escapeHtml(gif.description)}" loading="lazy">
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
   gifPickerEl.querySelectorAll('.gif-item').forEach(item => {
     item.addEventListener('click', () => {

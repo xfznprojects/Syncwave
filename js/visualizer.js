@@ -5,6 +5,8 @@ let ctx = null;
 let animationId = null;
 let mode = 'bars'; // 'bars', 'wave', 'circular'
 const modes = ['bars', 'wave', 'circular'];
+let dpr = window.devicePixelRatio || 1;
+let dataArrayBuf = null;
 
 export function initVisualizer(canvasEl) {
   canvas = canvasEl;
@@ -15,10 +17,11 @@ export function initVisualizer(canvasEl) {
 
 function resizeCanvas() {
   if (!canvas) return;
+  dpr = window.devicePixelRatio || 1;
   const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width = rect.width * window.devicePixelRatio;
-  canvas.height = rect.height * window.devicePixelRatio;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
 }
 
 export function startVisualizer() {
@@ -52,20 +55,22 @@ function draw() {
   const analyser = getAnalyser();
   if (!analyser || !ctx || !canvas) return;
 
-  const w = canvas.width / window.devicePixelRatio;
-  const h = canvas.height / window.devicePixelRatio;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
 
   ctx.clearRect(0, 0, w, h);
 
   const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
+  if (!dataArrayBuf || dataArrayBuf.length !== bufferLength) {
+    dataArrayBuf = new Uint8Array(bufferLength);
+  }
 
   if (mode === 'bars') {
-    drawBars(analyser, dataArray, bufferLength, w, h);
+    drawBars(analyser, dataArrayBuf, bufferLength, w, h);
   } else if (mode === 'wave') {
-    drawWave(analyser, dataArray, bufferLength, w, h);
+    drawWave(analyser, dataArrayBuf, bufferLength, w, h);
   } else if (mode === 'circular') {
-    drawCircular(analyser, dataArray, bufferLength, w, h);
+    drawCircular(analyser, dataArrayBuf, bufferLength, w, h);
   }
 }
 

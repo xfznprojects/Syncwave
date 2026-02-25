@@ -75,12 +75,15 @@ export function loginWithAudius() {
 
     window.addEventListener('message', onMessage);
 
-    // Clean up if popup is closed without completing
+    // Clean up if popup is closed without completing (with 5-minute safety timeout)
+    let popupCheckCount = 0;
+    const MAX_POPUP_CHECKS = 600; // 5 minutes at 500ms intervals
     const checkClosed = setInterval(() => {
-      if (popup.closed) {
+      popupCheckCount++;
+      if (popup.closed || popupCheckCount >= MAX_POPUP_CHECKS) {
         clearInterval(checkClosed);
         window.removeEventListener('message', onMessage);
-        reject(new Error('Login cancelled'));
+        reject(new Error(popup.closed ? 'Login cancelled' : 'Login timed out'));
       }
     }, 500);
   });

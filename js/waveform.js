@@ -7,6 +7,12 @@ let ctx = null;
 let animationId = null;
 let zoomLevel = 1.0;
 let isDragging = false;
+let dpr = window.devicePixelRatio || 1;
+
+// Reusable typed array buffers
+let dataLBuf = null;
+let dataRBuf = null;
+let freqLBuf = null;
 
 // Colors
 const COLOR_L = 'rgba(0, 240, 255, 0.7)';       // cyan for left
@@ -27,11 +33,12 @@ export function initWaveform(canvasEl) {
 
 function resizeCanvas() {
   if (!canvas) return;
+  dpr = window.devicePixelRatio || 1;
   const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width = rect.width * window.devicePixelRatio;
-  canvas.height = rect.height * window.devicePixelRatio;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  ctx.scale(dpr, dpr);
 }
 
 export function startWaveform() {
@@ -56,8 +63,8 @@ function draw() {
   const analyserR = getAnalyserRight();
   if (!ctx || !canvas || !analyserL || !analyserR) return;
 
-  const w = canvas.width / window.devicePixelRatio;
-  const h = canvas.height / window.devicePixelRatio;
+  const w = canvas.width / dpr;
+  const h = canvas.height / dpr;
   const halfH = h / 2;
 
   ctx.clearRect(0, 0, w, h);
@@ -65,15 +72,20 @@ function draw() {
   // Background grid
   drawGrid(w, h);
 
-  // Get waveform data
+  // Reuse buffers — only reallocate if analyser size changed
   const bufferLength = analyserL.fftSize;
-  const dataL = new Uint8Array(bufferLength);
-  const dataR = new Uint8Array(bufferLength);
+  if (!dataLBuf || dataLBuf.length !== bufferLength) {
+    dataLBuf = new Uint8Array(bufferLength);
+    dataRBuf = new Uint8Array(bufferLength);
+  }
+  if (!freqLBuf || freqLBuf.length !== analyserL.frequencyBinCount) {
+    freqLBuf = new Uint8Array(analyserL.frequencyBinCount);
+  }
+  const dataL = dataLBuf;
+  const dataR = dataRBuf;
+  const freqL = freqLBuf;
   analyserL.getByteTimeDomainData(dataL);
   analyserR.getByteTimeDomainData(dataR);
-
-  // Also get frequency data for coloring
-  const freqL = new Uint8Array(analyserL.frequencyBinCount);
   analyserL.getByteFrequencyData(freqL);
 
   // Compute dominant frequency for hue

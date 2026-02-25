@@ -17,12 +17,18 @@ import { initVisualizer, startVisualizer as startVis2D, stopVisualizer as stopVi
 import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D } from './visualizer3d.js';
 import {
   initChat, sendMessage, sendGif, handleIncomingMessage, clearChat,
-  searchGifs, getTrendingGifs, renderGifPicker, setupGifSearch,
+  searchGifs, getTrendingGifs, getTrendingTerms, renderGifPicker, setupGifSearch,
   setOnChatNameClick, setMutedUsersRef,
 } from './chat.js';
 import { startAnalysis, stopAnalysis, onAnalysisUpdate, destroy as destroyAnalysis } from './analysis.js';
 import { initWaveform, startWaveform, stopWaveform, zoomIn, zoomOut, getZoomLevel, destroy as destroyWaveform } from './waveform.js';
-import { savePlaylist as dbSavePlaylist, loadPlaylist as dbLoadPlaylist, saveChatMessage as dbSaveChatMessage, loadChatHistory as dbLoadChatHistory } from './database.js';
+import {
+  savePlaylist as dbSavePlaylist, loadPlaylist as dbLoadPlaylist,
+  saveChatMessage as dbSaveChatMessage, loadChatHistory as dbLoadChatHistory,
+  saveRoom as dbSaveRoom, updateRoomUserCount as dbUpdateRoomUserCount,
+  loadActiveRooms as dbLoadActiveRooms, loadInactiveRooms as dbLoadInactiveRooms,
+  loadRoomPlaylist as dbLoadRoomPlaylist,
+} from './database.js';
 
 // Song requests
 let songRequests = [];
@@ -76,6 +82,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderRoomDirectory(rooms);
   });
 
+  // Load rooms from DB on initial page load (before any lobby broadcasts arrive)
+  renderFullDirectory();
+
   // Room events
   onRoomEvent('onSync', handleSync);
   onRoomEvent('onChat', (msg) => {
@@ -94,10 +103,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   onRoomEvent('onPresenceChange', (users) => {
     renderListeners(users);
-    // If room is empty (only us) and we're host, pause
-    if (getIsHost() && users.length <= 1) {
-      // Keep playing — host is still here
-    }
+    // Update DB user count when listeners join/leave (host only)
+    persistRoomToDB();
   });
   onRoomEvent('onKick', (data) => {
     const user = getCurrentUser();
@@ -115,6 +122,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     startAnalysis();
     // Re-render queue to update highlight on active track
     renderQueue(getQueue(), getCurrentIndex());
+    // Persist room to DB on track change (host only)
+    persistRoomToDB();
   });
   onPlayerEvent('onPlayStateChange', (playing) => {
     updatePlayButton(playing);
@@ -130,6 +139,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const user = getCurrentUser();
     if (user) dbSavePlaylist(user.userId, queue);
     else savePlaylistToStorage(); // fallback for guests
+    // Persist room to DB on queue change (host only)
+    persistRoomToDB();
   });
 
   // Route handling
@@ -150,6 +161,8 @@ function handleRoute() {
     roomView.classList.add('hidden');
     homeView.classList.remove('hidden');
     exitRoom();
+    // Refresh room directory from DB when returning to home
+    renderFullDirectory();
   }
 }
 
@@ -159,6 +172,7 @@ function renderAuthUI() {
   const authBtn = document.getElementById('auth-btn');
   const authAvatar = document.getElementById('auth-avatar');
   const authName = document.getElementById('auth-name');
+  const createBtn = document.getElementById('create-room-btn');
   const user = getCurrentUser();
 
   if (user) {
@@ -169,6 +183,10 @@ function renderAuthUI() {
     if (user.profilePicture?.['150x150']) {
       authAvatar.src = user.profilePicture['150x150'];
       authAvatar.classList.remove('hidden');
+    }
+    // Update create room button to reflect user already has a room
+    if (createBtn) {
+      createBtn.innerHTML = '<i class="fa-solid fa-door-open"></i> Enter Your Room';
     }
   } else {
     authBtn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Log In with Audius';
@@ -184,48 +202,123 @@ function renderAuthUI() {
     };
     authName.classList.add('hidden');
     authAvatar.classList.add('hidden');
+    // Reset create room button text
+    if (createBtn) {
+      createBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Create a Room';
+    }
   }
 }
 
 // ─── HOME VIEW ──────────────────────────────────────────────
 
-function renderRoomDirectory(rooms) {
-  const grid = document.getElementById('room-grid');
-  if (!grid) return;
+// Keep track of live lobby rooms (from broadcast) to merge with DB rooms
+let liveActiveRooms = [];
 
-  if (!rooms || rooms.length === 0) {
-    grid.innerHTML = `<div class="empty-state">
-      <p>No active rooms right now</p>
-      <p>Log in with Audius to create one!</p>
-    </div>`;
-    return;
-  }
-
-  grid.innerHTML = rooms.map(room => `
-    <div class="room-card" data-room="${escapeHtml(room.roomId)}">
+function renderRoomCard(room, inactive = false) {
+  const timeAgo = inactive && room.lastActiveAt ? getTimeAgo(room.lastActiveAt) : '';
+  return `
+    <div class="room-card ${inactive ? 'room-card-inactive' : ''}" data-room="${escapeHtml(room.roomId)}">
       <div class="room-card-header">
         ${room.hostAvatar
           ? `<img class="room-host-avatar" src="${escapeHtml(room.hostAvatar)}" alt="${escapeHtml(room.hostName)}">`
-          : `<div class="room-host-avatar-fallback">${(room.hostName || '?')[0].toUpperCase()}</div>`}
+          : `<div class="room-host-avatar-fallback">${(room.hostName || room.roomId || '?')[0].toUpperCase()}</div>`}
         <div class="room-host-info">
           <span class="room-host-name">${escapeHtml(room.hostName || room.roomId)}</span>
-          <span class="room-listener-count">${room.userCount} listener${room.userCount !== 1 ? 's' : ''}</span>
+          ${inactive
+            ? `<span class="room-listener-count room-inactive-label"><i class="fa-solid fa-clock"></i> ${timeAgo}</span>`
+            : `<span class="room-listener-count"><i class="fa-solid fa-headphones"></i> ${room.userCount} listener${room.userCount !== 1 ? 's' : ''}</span>`}
         </div>
       </div>
       ${room.currentTrack ? `
         <div class="room-now-playing">
           <span class="room-track-title">${escapeHtml(room.currentTrack.title)}</span>
-          <span class="room-track-artist">${escapeHtml(room.currentTrack.artist)}</span>
+          <span class="room-track-artist">${escapeHtml(room.currentTrack.artist || '')}</span>
         </div>
       ` : '<div class="room-now-playing"><span class="room-track-title">No track playing</span></div>'}
-    </div>
-  `).join('');
+    </div>`;
+}
 
-  grid.querySelectorAll('.room-card').forEach(card => {
+function attachRoomCardClicks(container) {
+  container.querySelectorAll('.room-card').forEach(card => {
     card.addEventListener('click', () => {
       navigate(`#/room/${card.dataset.room}`);
     });
   });
+}
+
+function renderRoomDirectory(activeRooms) {
+  // Update live active rooms from lobby broadcast
+  liveActiveRooms = activeRooms || [];
+  renderFullDirectory();
+}
+
+const MIN_PLAYLIST_SIZE = 5;
+
+function dedupeRooms(rooms) {
+  const seen = new Set();
+  return rooms.filter(r => {
+    if (seen.has(r.roomId)) return false;
+    seen.add(r.roomId);
+    return true;
+  });
+}
+
+function roomHasEnoughSongs(room) {
+  // Live lobby rooms don't carry playlist data — let them through
+  if (room.playlist == null) return true;
+  const list = Array.isArray(room.playlist) ? room.playlist : [];
+  return list.length >= MIN_PLAYLIST_SIZE;
+}
+
+async function renderFullDirectory() {
+  const activeGrid = document.getElementById('room-grid-active');
+  const inactiveGrid = document.getElementById('room-grid-inactive');
+  const inactiveSection = document.getElementById('inactive-rooms-section');
+  if (!activeGrid) return;
+
+  // Merge live lobby data with DB active rooms
+  // Live lobby data takes precedence (it's real-time)
+  const liveIds = new Set(liveActiveRooms.map(r => r.roomId));
+  let dbActive = [];
+  try {
+    dbActive = await dbLoadActiveRooms(20);
+  } catch { /* ignore */ }
+
+  // Combine: live rooms first, then DB rooms not already in live set — deduped
+  const mergedActive = dedupeRooms([
+    ...liveActiveRooms,
+    ...dbActive.filter(r => !liveIds.has(r.roomId)),
+  ]).slice(0, 20);
+
+  if (mergedActive.length === 0) {
+    activeGrid.innerHTML = `<div class="empty-state">
+      <p>No active rooms right now</p>
+      <p>Log in with Audius to create one!</p>
+    </div>`;
+  } else {
+    activeGrid.innerHTML = mergedActive.map(r => renderRoomCard(r, false)).join('');
+    attachRoomCardClicks(activeGrid);
+  }
+
+  // Load inactive rooms from DB
+  if (inactiveGrid && inactiveSection) {
+    try {
+      const inactive = await dbLoadInactiveRooms(10);
+      // Filter: not active in lobby, no duplicates, 5+ songs
+      const filtered = dedupeRooms(
+        inactive.filter(r => !liveIds.has(r.roomId) && roomHasEnoughSongs(r))
+      );
+      if (filtered.length > 0) {
+        inactiveSection.classList.remove('hidden');
+        inactiveGrid.innerHTML = filtered.map(r => renderRoomCard(r, true)).join('');
+        attachRoomCardClicks(inactiveGrid);
+      } else {
+        inactiveSection.classList.add('hidden');
+      }
+    } catch {
+      inactiveSection.classList.add('hidden');
+    }
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -338,8 +431,12 @@ async function enterRoom(roomId) {
     return;
   }
 
-  // Update room header
-  document.getElementById('room-title').textContent = `${roomId}'s Room`;
+  // Update room title in main header
+  const headerTitle = document.getElementById('header-room-title');
+  if (headerTitle) {
+    headerTitle.textContent = `${roomId}'s Room`;
+    headerTitle.classList.remove('hidden');
+  }
 
   // Show/hide host controls
   const hostControls = document.querySelectorAll('.host-only');
@@ -393,6 +490,22 @@ async function enterRoom(roomId) {
         showToast(`Restored ${saved.length} tracks from last session`);
       }
     }
+  } else {
+    // Non-host: wait a moment for host sync, then auto-play room playlist if no host responds
+    setTimeout(async () => {
+      // If no tracks arrived from host sync, load the room's saved playlist
+      if (getQueue().length === 0) {
+        try {
+          const roomPlaylist = await dbLoadRoomPlaylist(roomId);
+          if (roomPlaylist && roomPlaylist.length > 0) {
+            loadQueueFromData(roomPlaylist, true); // autoPlay = true
+            showToast(`Playing ${roomPlaylist.length} tracks from this room`);
+          }
+        } catch {
+          // No saved playlist — that's fine
+        }
+      }
+    }, 3000); // 3 seconds — enough time for host to respond with sync
   }
 
   // Reset song requests
@@ -414,6 +527,13 @@ function exitRoom() {
   stopPreview();
   clearChat();
   songRequests = [];
+
+  // Clear room title from header
+  const headerTitle = document.getElementById('header-room-title');
+  if (headerTitle) {
+    headerTitle.textContent = '';
+    headerTitle.classList.add('hidden');
+  }
 }
 
 // ─── SEARCH WITH TABS ───────────────────────────────────────
@@ -743,17 +863,34 @@ function setupPlayerControls() {
   const nextBtn = document.getElementById('btn-next');
   const vizBtn = document.getElementById('btn-viz-mode');
   const progressBar = document.getElementById('progress-bar');
+
+  // Dim playback controls for non-hosts
+  const controlsWrap = document.querySelector('.player-controls');
+  if (controlsWrap && !getIsHost()) {
+    controlsWrap.classList.add('controls-locked');
+  }
   const volumeSlider = document.getElementById('volume-slider');
   const muteBtn = document.getElementById('btn-mute');
 
   if (playPauseBtn) {
     playPauseBtn.addEventListener('click', () => {
+      if (!getIsHost()) { showToast('Only the host can control playback'); return; }
       resumeAudioContext();
       togglePlay();
     });
   }
-  if (prevBtn) prevBtn.addEventListener('click', playPrevious);
-  if (nextBtn) nextBtn.addEventListener('click', playNext);
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (!getIsHost()) { showToast('Only the host can control playback'); return; }
+      playPrevious();
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      if (!getIsHost()) { showToast('Only the host can control playback'); return; }
+      playNext();
+    });
+  }
 
   if (vizBtn) {
     vizBtn.addEventListener('click', () => {
@@ -982,25 +1119,17 @@ function setupChatUserMenu() {
       if (action === 'profile') {
         window.open(`https://audius.co/${chatMenuTarget.handle}`, '_blank', 'noopener');
       } else if (action === 'mute') {
-        if (mutedUsers.has(chatMenuTarget.userId)) {
-          // Unmute
-          mutedUsers.delete(chatMenuTarget.userId);
-          document.querySelectorAll('.chat-message').forEach(msg => {
-            if (msg.dataset.userId === chatMenuTarget.userId) {
-              msg.classList.remove('muted');
-            }
+        const isMuted = mutedUsers.has(chatMenuTarget.userId);
+        if (isMuted) mutedUsers.delete(chatMenuTarget.userId);
+        else mutedUsers.add(chatMenuTarget.userId);
+        // Single pass to toggle muted class on matching messages
+        const chatContainer = document.getElementById('chat-messages');
+        if (chatContainer) {
+          chatContainer.querySelectorAll(`.chat-message[data-user-id="${chatMenuTarget.userId}"]`).forEach(msg => {
+            msg.classList.toggle('muted', !isMuted);
           });
-          showToast(`Unmuted ${chatMenuTarget.name}`);
-        } else {
-          // Mute
-          mutedUsers.add(chatMenuTarget.userId);
-          document.querySelectorAll('.chat-message').forEach(msg => {
-            if (msg.dataset.userId === chatMenuTarget.userId) {
-              msg.classList.add('muted');
-            }
-          });
-          showToast(`Muted ${chatMenuTarget.name}`);
         }
+        showToast(`${isMuted ? 'Unmuted' : 'Muted'} ${chatMenuTarget.name}`);
       } else if (action === 'kick') {
         if (getIsHost()) {
           mutedUsers.add(chatMenuTarget.userId);
@@ -1290,41 +1419,54 @@ function renderListeners(users) {
   `;
   document.body.appendChild(floatingPopup);
 
-  container.querySelectorAll('.listener-item').forEach(item => {
-    item.addEventListener('mouseenter', () => {
-      const handle = item.dataset.handle;
-      const name = item.dataset.name;
-      const isHost = item.dataset.isHost === '1';
-      const profileUrl = `https://audius.co/${handle}`;
+  let popupHideTimer = null;
 
-      floatingPopup.querySelector('.listener-popup-name').textContent = name;
-      floatingPopup.querySelector('.listener-popup-handle').textContent = '@' + handle;
-      floatingPopup.querySelector('.listener-popup-host').innerHTML = isHost ? '<span class="host-badge">HOST</span>' : '';
-      floatingPopup.querySelector('.listener-popup-link').href = profileUrl;
+  function showPopup(item) {
+    clearTimeout(popupHideTimer);
+    const handle = item.dataset.handle;
+    const name = item.dataset.name;
+    const isHost = item.dataset.isHost === '1';
+    const profileUrl = `https://audius.co/${handle}`;
 
-      floatingPopup.style.display = 'block';
+    floatingPopup.querySelector('.listener-popup-name').textContent = name;
+    floatingPopup.querySelector('.listener-popup-handle').textContent = '@' + handle;
+    floatingPopup.querySelector('.listener-popup-host').innerHTML = isHost ? '<span class="host-badge">HOST</span>' : '';
+    floatingPopup.querySelector('.listener-popup-link').href = profileUrl;
 
-      const rect = item.getBoundingClientRect();
-      const popupW = floatingPopup.offsetWidth;
-      const popupH = floatingPopup.offsetHeight;
-      let left = rect.left + rect.width / 2 - popupW / 2;
-      let top = rect.top - popupH - 8;
+    floatingPopup.style.display = 'block';
 
-      if (left < 4) left = 4;
-      if (left + popupW > window.innerWidth - 4) left = window.innerWidth - popupW - 4;
-      if (top < 4) {
-        top = rect.bottom + 8;
-        floatingPopup.classList.add('below');
-      } else {
-        floatingPopup.classList.remove('below');
-      }
-      floatingPopup.style.left = left + 'px';
-      floatingPopup.style.top = top + 'px';
-    });
+    const rect = item.getBoundingClientRect();
+    const popupW = floatingPopup.offsetWidth;
+    const popupH = floatingPopup.offsetHeight;
+    let left = rect.left + rect.width / 2 - popupW / 2;
+    let top = rect.top - popupH - 14;
 
-    item.addEventListener('mouseleave', () => {
+    if (left < 4) left = 4;
+    if (left + popupW > window.innerWidth - 4) left = window.innerWidth - popupW - 4;
+    if (top < 4) {
+      top = rect.bottom + 14;
+      floatingPopup.classList.add('below');
+    } else {
+      floatingPopup.classList.remove('below');
+    }
+    floatingPopup.style.left = left + 'px';
+    floatingPopup.style.top = top + 'px';
+  }
+
+  function scheduleHide() {
+    clearTimeout(popupHideTimer);
+    popupHideTimer = setTimeout(() => {
       floatingPopup.style.display = 'none';
-    });
+    }, 150);
+  }
+
+  // Keep popup visible while mouse is over it, hide when leaving
+  floatingPopup.addEventListener('mouseenter', () => clearTimeout(popupHideTimer));
+  floatingPopup.addEventListener('mouseleave', scheduleHide);
+
+  container.querySelectorAll('.listener-item').forEach(item => {
+    item.addEventListener('mouseenter', () => showPopup(item));
+    item.addEventListener('mouseleave', scheduleHide);
   });
 }
 
@@ -1372,35 +1514,139 @@ function setupGifPicker() {
   const gifBtn = document.getElementById('gif-btn');
   const gifPanel = document.getElementById('gif-picker');
   const gifSearchInput = document.getElementById('gif-search-input');
+  const gifSearchBtn = document.getElementById('gif-search-btn');
   const gifGrid = document.getElementById('gif-picker-grid');
+  const gifTrendingTags = document.getElementById('gif-trending-tags');
 
   if (!gifBtn || !gifPanel) return;
 
-  gifBtn.addEventListener('click', async () => {
-    gifPanel.classList.toggle('hidden');
-    if (!gifPanel.classList.contains('hidden')) {
-      const trending = await getTrendingGifs();
-      renderGifPicker(trending, (url, preview) => {
-        sendGif(url, preview);
-        gifPanel.classList.add('hidden');
-      });
+  let gifPickerOpen = false;
+  let gifLoading = false;
+  let trendingTermsCache = null;
+
+  function openGifPicker() {
+    if (gifPickerOpen) return;
+    gifPickerOpen = true;
+    gifPanel.classList.remove('hidden');
+    loadTrendingContent();
+    if (gifSearchInput) {
+      gifSearchInput.value = '';
+      gifSearchInput.focus();
     }
+  }
+
+  function closeGifPicker() {
+    if (!gifPickerOpen) return;
+    gifPickerOpen = false;
+    gifPanel.classList.add('hidden');
+  }
+
+  function onGifSelect(url, preview) {
+    sendGif(url, preview);
+    closeGifPicker();
+  }
+
+  async function loadTrendingContent() {
+    if (gifLoading) return;
+    gifLoading = true;
+    gifGrid.innerHTML = '<div class="gif-loading">Loading GIFs...</div>';
+
+    try {
+      // Load trending terms and trending GIFs in parallel
+      const [terms, gifs] = await Promise.all([
+        trendingTermsCache || getTrendingTerms(),
+        getTrendingGifs(),
+      ]);
+      trendingTermsCache = terms;
+      renderTrendingTags(terms);
+      renderGifPicker(gifs, onGifSelect);
+    } catch {
+      gifGrid.innerHTML = '<div class="gif-empty">Failed to load GIFs</div>';
+    }
+    gifLoading = false;
+  }
+
+  function renderTrendingTags(terms) {
+    if (!gifTrendingTags || !terms.length) return;
+    gifTrendingTags.innerHTML = terms.map(term =>
+      `<button class="gif-trending-tag" data-term="${escapeHtml(term)}">${escapeHtml(term)}</button>`
+    ).join('');
+
+    gifTrendingTags.querySelectorAll('.gif-trending-tag').forEach(tag => {
+      tag.addEventListener('click', () => {
+        const term = tag.dataset.term;
+        if (gifSearchInput) gifSearchInput.value = term;
+        // Highlight active tag
+        gifTrendingTags.querySelectorAll('.gif-trending-tag').forEach(t => t.classList.remove('active'));
+        tag.classList.add('active');
+        doSearch(term);
+      });
+    });
+  }
+
+  async function doSearch(query) {
+    if (gifLoading) return;
+    const trimmed = (query || '').trim();
+    if (!trimmed) {
+      loadTrendingContent();
+      return;
+    }
+    gifLoading = true;
+    gifGrid.innerHTML = '<div class="gif-loading">Searching...</div>';
+    try {
+      const results = await searchGifs(trimmed);
+      renderGifPicker(results, onGifSelect);
+    } catch {
+      gifGrid.innerHTML = '<div class="gif-empty">Search failed</div>';
+    }
+    gifLoading = false;
+  }
+
+  // Toggle button
+  gifBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (gifPickerOpen) closeGifPicker();
+    else openGifPicker();
   });
 
+  // Search button click
+  if (gifSearchBtn) {
+    gifSearchBtn.addEventListener('click', () => {
+      if (gifSearchInput) doSearch(gifSearchInput.value);
+    });
+  }
+
+  // Search on Enter key
   if (gifSearchInput) {
-    setupGifSearch(gifSearchInput, (results) => {
-      renderGifPicker(results, (url, preview) => {
-        sendGif(url, preview);
-        gifPanel.classList.add('hidden');
-      });
+    gifSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        doSearch(gifSearchInput.value);
+      }
+    });
+
+    // Debounced live search as user types
+    let searchTimeout = null;
+    gifSearchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      // Clear active tag highlight
+      if (gifTrendingTags) gifTrendingTags.querySelectorAll('.gif-trending-tag').forEach(t => t.classList.remove('active'));
+      searchTimeout = setTimeout(() => {
+        doSearch(gifSearchInput.value);
+      }, 400);
     });
   }
 
   // Close GIF picker when clicking outside
   document.addEventListener('click', (e) => {
-    if (gifPanel && !gifPanel.contains(e.target) && e.target !== gifBtn) {
-      gifPanel.classList.add('hidden');
+    if (gifPickerOpen && !gifPanel.contains(e.target) && !gifBtn.contains(e.target)) {
+      closeGifPicker();
     }
+  });
+
+  // Prevent clicks inside the picker from bubbling and closing it
+  gifPanel.addEventListener('click', (e) => {
+    e.stopPropagation();
   });
 }
 
@@ -1520,6 +1766,7 @@ function startAnnouncing(roomId) {
     announceRoom({
       roomId,
       hostName: user?.name || roomId,
+      hostHandle: user?.handle || roomId,
       hostAvatar: user?.profilePicture?.['150x150'] || null,
       userCount: users.length,
       currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
@@ -1528,6 +1775,27 @@ function startAnnouncing(roomId) {
 
   doAnnounce();
   announceInterval = setInterval(doAnnounce, 5000);
+
+  // Save room to DB once on creation
+  persistRoomToDB();
+}
+
+// Save current room state to database — called on meaningful changes only
+function persistRoomToDB() {
+  const roomId = getRoomId();
+  if (!roomId || !getIsHost()) return;
+  const user = getCurrentUser();
+  const track = getCurrentTrack();
+  const users = getUsers();
+  dbSaveRoom({
+    roomId,
+    hostName: user?.name || roomId,
+    hostHandle: user?.handle || roomId,
+    hostAvatar: user?.profilePicture?.['150x150'] || null,
+    userCount: users.length,
+    currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
+    playlist: getQueue(),
+  });
 }
 
 function stopAnnouncing() {
@@ -1535,10 +1803,11 @@ function stopAnnouncing() {
     clearInterval(announceInterval);
     announceInterval = null;
   }
-  // Announce with 0 users to remove from directory
+  // Announce with 0 users to remove from active directory
   const roomId = getRoomId();
   if (roomId) {
     announceRoom({ roomId, userCount: 0 });
+    dbUpdateRoomUserCount(roomId, 0);
   }
 }
 
@@ -1556,6 +1825,17 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function getTimeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }
 
 function showToast(message) {

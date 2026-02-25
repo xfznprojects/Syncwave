@@ -343,6 +343,35 @@ button { cursor: pointer; font-family: inherit; }
   opacity: 1;
 }
 
+.room-card-permanent {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.15);
+}
+.room-card-permanent:hover {
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
+}
+
+.room-badge-247 {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: linear-gradient(135deg, var(--accent), var(--secondary));
+  color: #fff;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.room-directory-permanent h2 {
+  color: var(--accent);
+}
+.room-directory-permanent h2 i {
+  color: var(--accent);
+}
+
 .room-inactive-label {
   color: var(--text-dim);
 }

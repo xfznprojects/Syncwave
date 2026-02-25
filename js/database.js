@@ -87,11 +87,13 @@ export async function saveRoom(roomData) {
             host_name: roomData.hostName || null,
             host_handle: roomData.hostHandle || null,
             host_avatar: roomData.hostAvatar || null,
+            host_user_id: roomData.hostUserId || null,
             current_track: roomData.currentTrack || null,
             user_count: roomData.userCount || 0,
             playlist: roomData.playlist ? JSON.stringify(roomData.playlist) : '[]',
             muted_users: roomData.mutedUsers ? JSON.stringify(roomData.mutedUsers) : '[]',
             banned_users: roomData.bannedUsers ? JSON.stringify(roomData.bannedUsers) : '[]',
+            playback_state: roomData.playbackState ? JSON.stringify(roomData.playbackState) : null,
             last_active_at: new Date().toISOString(),
           }, { onConflict: 'room_id' });
 
@@ -135,6 +137,23 @@ export async function loadActiveRooms(limit = 20) {
   }
 }
 
+export async function loadPermanentRooms() {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('rooms')
+      .select('*')
+      .eq('is_permanent', true)
+      .order('room_id', { ascending: true });
+
+    if (error) throw error;
+    return (data || []).map(mapRoomRow);
+  } catch (e) {
+    console.warn('Failed to load permanent rooms:', e);
+    return [];
+  }
+}
+
 export async function loadInactiveRooms(limit = 10) {
   try {
     const client = getClient();
@@ -170,6 +189,23 @@ export async function loadRoomPlaylist(roomId) {
     console.warn('Failed to load room playlist:', e);
   }
   return null;
+}
+
+export async function loadRoom(roomId) {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('rooms')
+      .select('*')
+      .eq('room_id', roomId)
+      .single();
+
+    if (error) throw error;
+    return data ? mapRoomRow(data) : null;
+  } catch (e) {
+    console.warn('Failed to load room:', e);
+    return null;
+  }
 }
 
 export async function loadRoomBannedUsers(roomId) {
@@ -218,11 +254,14 @@ function mapRoomRow(row) {
     hostName: row.host_name,
     hostHandle: row.host_handle,
     hostAvatar: row.host_avatar,
+    hostUserId: row.host_user_id,
     currentTrack: row.current_track,
     userCount: row.user_count,
     playlist: row.playlist,
     mutedUsers: row.muted_users,
     bannedUsers: row.banned_users,
+    isPermanent: row.is_permanent,
+    playbackState: row.playback_state,
     lastActiveAt: row.last_active_at,
     createdAt: row.created_at,
   };

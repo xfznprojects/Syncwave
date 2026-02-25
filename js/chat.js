@@ -65,7 +65,7 @@ export function sendGif(gifUrl, previewUrl) {
   return message;
 }
 
-export function handleIncomingMessage(message) {
+export function handleIncomingMessage(message, { skipRateLimit = false } = {}) {
   // Sanitize all incoming fields (attacker-controlled via broadcast)
   const safe = {
     id: message.id,
@@ -80,9 +80,12 @@ export function handleIncomingMessage(message) {
   };
 
   // Rate limit by userId (drop floods from same user)
-  const lastTime = rateLimitMap.get(safe.userId) || 0;
-  if (Date.now() - lastTime < RATE_LIMIT_MS) return;
-  rateLimitMap.set(safe.userId, Date.now());
+  // Skip for history loading — those are trusted DB records, not live broadcasts
+  if (!skipRateLimit) {
+    const lastTime = rateLimitMap.get(safe.userId) || 0;
+    if (Date.now() - lastTime < RATE_LIMIT_MS) return;
+    rateLimitMap.set(safe.userId, Date.now());
+  }
 
   renderMessage(safe);
 }

@@ -14,7 +14,7 @@ import {
   playNext, playPrevious, playFromQueue, toggleShuffle, isShuffled,
   onPlayerEvent, handleSync, handleTrackChange, getAnalyser, resumeAudioContext,
   stopSyncLoop, destroy as destroyPlayer, setVolume, getVolume,
-  moveInQueue, loadQueueFromData,
+  moveInQueue, loadQueueFromData, getAudioElement,
 } from './player.js';
 import { initVisualizer, startVisualizer as startVis2D, stopVisualizer as stopVis2D, cycleMode, getMode, destroy as destroyVis2D } from './visualizer.js';
 import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D } from './visualizer3d.js';
@@ -32,6 +32,7 @@ import {
   saveRoom as dbSaveRoom, updateRoomUserCount as dbUpdateRoomUserCount,
   loadActiveRooms as dbLoadActiveRooms, loadInactiveRooms as dbLoadInactiveRooms,
   loadRoomPlaylist as dbLoadRoomPlaylist, loadRoomMutedUsers as dbLoadRoomMutedUsers, loadRoomBannedUsers as dbLoadRoomBannedUsers,
+  loadRoom as dbLoadRoom, loadPermanentRooms as dbLoadPermanentRooms,
 } from './database.js';
 
 // Song requests
@@ -242,14 +243,16 @@ let liveActiveRooms = [];
 
 function renderRoomCard(room, inactive = false) {
   const timeAgo = inactive && room.lastActiveAt ? getTimeAgo(room.lastActiveAt) : '';
+  const isPermanent = room.isPermanent === true;
+  const badgeHtml = isPermanent ? '<span class="room-badge-247">24/7</span>' : '';
   return `
-    <div class="room-card ${inactive ? 'room-card-inactive' : ''}" data-room="${escapeHtml(room.roomId)}">
+    <div class="room-card ${inactive ? 'room-card-inactive' : ''} ${isPermanent ? 'room-card-permanent' : ''}" data-room="${escapeHtml(room.roomId)}">
       <div class="room-card-header">
         ${room.hostAvatar
           ? `<img class="room-host-avatar" src="${escapeHtml(room.hostAvatar)}" alt="${escapeHtml(room.hostName)}">`
           : `<div class="room-host-avatar-fallback">${(room.hostName || room.roomId || '?')[0].toUpperCase()}</div>`}
         <div class="room-host-info">
-          <span class="room-host-name">${escapeHtml(room.hostName || room.roomId)}</span>
+          <span class="room-host-name">${escapeHtml(room.hostName || room.roomId)}${badgeHtml}</span>
           ${inactive
             ? `<span class="room-listener-count room-inactive-label"><i class="fa-solid fa-clock"></i> ${timeAgo}</span>`
             : `<span class="room-listener-count"><i class="fa-solid fa-headphones"></i> ${room.userCount} listener${room.userCount !== 1 ? 's' : ''}</span>`}
@@ -297,10 +300,30 @@ function roomHasEnoughSongs(room) {
 }
 
 async function renderFullDirectory() {
+  const permanentGrid = document.getElementById('room-grid-permanent');
+  const permanentSection = document.getElementById('permanent-rooms-section');
   const activeGrid = document.getElementById('room-grid-active');
   const inactiveGrid = document.getElementById('room-grid-inactive');
   const inactiveSection = document.getElementById('inactive-rooms-section');
   if (!activeGrid) return;
+
+  // Load permanent rooms from DB — always shown regardless of user count
+  let permanentRoomIds = new Set();
+  if (permanentGrid && permanentSection) {
+    try {
+      const permanentRooms = await dbLoadPermanentRooms();
+      if (permanentRooms.length > 0) {
+        permanentRoomIds = new Set(permanentRooms.map(r => r.roomId));
+        permanentSection.classList.remove('hidden');
+        permanentGrid.innerHTML = permanentRooms.map(r => renderRoomCard(r, false)).join('');
+        attachRoomCardClicks(permanentGrid);
+      } else {
+        permanentSection.classList.add('hidden');
+      }
+    } catch {
+      permanentSection.classList.add('hidden');
+    }
+  }
 
   // Merge live lobby data with DB active rooms
   // Live lobby data takes precedence (it's real-time)
@@ -311,10 +334,11 @@ async function renderFullDirectory() {
   } catch { /* ignore */ }
 
   // Combine: live rooms first, then DB rooms not already in live set — deduped
+  // Exclude permanent rooms (they have their own section)
   const mergedActive = dedupeRooms([
     ...liveActiveRooms,
     ...dbActive.filter(r => !liveIds.has(r.roomId)),
-  ]).slice(0, 20);
+  ]).filter(r => !permanentRoomIds.has(r.roomId)).slice(0, 20);
 
   if (mergedActive.length === 0) {
     activeGrid.innerHTML = `<div class="empty-state">
@@ -330,9 +354,9 @@ async function renderFullDirectory() {
   if (inactiveGrid && inactiveSection) {
     try {
       const inactive = await dbLoadInactiveRooms(10);
-      // Filter: not active in lobby, no duplicates, 5+ songs
+      // Filter: not active in lobby, no duplicates, 5+ songs, not permanent
       const filtered = dedupeRooms(
-        inactive.filter(r => !liveIds.has(r.roomId) && roomHasEnoughSongs(r))
+        inactive.filter(r => !liveIds.has(r.roomId) && !permanentRoomIds.has(r.roomId) && roomHasEnoughSongs(r))
       );
       if (filtered.length > 0) {
         inactiveSection.classList.remove('hidden');
@@ -382,6 +406,10 @@ async function enterRoom(roomId) {
   const user = getCurrentUser();
   const isCreator = user && user.handle === roomId;
 
+  // Load room metadata from DB (for permanent rooms, playback state, etc.)
+  let roomData = null;
+  try { roomData = await dbLoadRoom(roomId); } catch { /* ignore */ }
+
   // Init chat — load persisted muted users for this room
   const chatMessages = document.getElementById('chat-messages');
   const gifPicker = document.getElementById('gif-picker-grid');
@@ -400,15 +428,16 @@ async function enterRoom(roomId) {
   clearChat();
 
   // Load prior chat history for this room (from Supabase with localStorage fallback)
+  // skipRateLimit: true because these are saved DB records, not live floods
   try {
     const chatHistory = await dbLoadChatHistory(roomId);
     if (chatHistory.length > 0) {
-      chatHistory.forEach(msg => handleIncomingMessage(msg));
+      chatHistory.forEach(msg => handleIncomingMessage(msg, { skipRateLimit: true }));
     }
   } catch {
     const chatHistory = getChatHistory(roomId);
     if (chatHistory.length > 0) {
-      chatHistory.forEach(msg => handleIncomingMessage(msg));
+      chatHistory.forEach(msg => handleIncomingMessage(msg, { skipRateLimit: true }));
     }
   }
 
@@ -444,11 +473,23 @@ async function enterRoom(roomId) {
     if (drEl) drEl.textContent = results.dr != null ? `${results.dr} dB` : '--';
   });
 
+  // Determine if this user should be host
+  // 1) Room creator (their own handle)
+  // 2) Permanent rooms: configured host handle gets promotion
+  const isPermanentRoom = roomData?.isPermanent === true;
+  const roomHostHandle = CONFIG.ROOM_HOST_HANDLE;
+  const isDesignatedHost = isPermanentRoom && roomHostHandle && user && user.handle?.toUpperCase() === roomHostHandle.toUpperCase();
+  const shouldBeHost = isCreator || isDesignatedHost;
+
   // Join/create room
   try {
-    if (isCreator) {
+    if (shouldBeHost) {
       await createRoom(user);
-      showToast('Room created! Share your handle to invite listeners.');
+      if (isPermanentRoom && !isCreator) {
+        showToast('Welcome back! You are now hosting this 24/7 room.');
+      } else if (isCreator) {
+        showToast('Room created! Share your handle to invite listeners.');
+      }
     } else {
       const guestUser = user || {
         userId: 'guest-' + Date.now(),
@@ -515,14 +556,28 @@ async function enterRoom(roomId) {
 
     // Restore saved playlist if host and queue is empty
     if (getQueue().length === 0) {
-      let saved = null;
-      if (user) {
-        try { saved = await dbLoadPlaylist(user.userId); } catch { /* fallback below */ }
+      // For permanent rooms or rooms with saved playback state, restore from room data first
+      let restored = false;
+      if (roomData?.playlist) {
+        const playlist = typeof roomData.playlist === 'string' ? JSON.parse(roomData.playlist) : roomData.playlist;
+        if (Array.isArray(playlist) && playlist.length > 0) {
+          loadQueueFromData(playlist, false);
+          restored = await restorePlaybackState(roomData);
+          if (!restored) showToast(`Restored ${playlist.length} tracks from this room`);
+        }
       }
-      if (!saved) saved = loadPlaylistFromStorage();
-      if (saved && saved.length > 0) {
-        loadQueueFromData(saved, false);
-        showToast(`Restored ${saved.length} tracks from last session`);
+
+      // Fall back to user's personal playlist
+      if (!restored && getQueue().length === 0) {
+        let saved = null;
+        if (user) {
+          try { saved = await dbLoadPlaylist(user.userId); } catch { /* fallback below */ }
+        }
+        if (!saved) saved = loadPlaylistFromStorage();
+        if (saved && saved.length > 0) {
+          loadQueueFromData(saved, false);
+          showToast(`Restored ${saved.length} tracks from last session`);
+        }
       }
     }
   } else {
@@ -533,8 +588,14 @@ async function enterRoom(roomId) {
         try {
           const roomPlaylist = await dbLoadRoomPlaylist(roomId);
           if (roomPlaylist && roomPlaylist.length > 0) {
-            loadQueueFromData(roomPlaylist, true); // autoPlay = true
-            showToast(`Playing ${roomPlaylist.length} tracks from this room`);
+            loadQueueFromData(roomPlaylist, false);
+            // Try to restore playback position from room data
+            const restored = await restorePlaybackState(roomData);
+            if (!restored) {
+              // No saved position — just start playing from the beginning
+              playFromQueue(0);
+              showToast(`Playing ${roomPlaylist.length} tracks from this room`);
+            }
           }
         } catch {
           // No saved playlist — that's fine
@@ -2100,17 +2161,87 @@ function persistRoomToDB() {
   const user = getCurrentUser();
   const track = getCurrentTrack();
   const users = getUsers();
+  const audio = getAudioElement();
   dbSaveRoom({
     roomId,
     hostName: user?.name || roomId,
     hostHandle: user?.handle || roomId,
     hostAvatar: user?.profilePicture?.['150x150'] || null,
+    hostUserId: user?.userId || null,
     userCount: users.length,
     currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
     playlist: getQueue(),
     mutedUsers: Array.from(mutedUsers),
     bannedUsers: Array.from(bannedUsers),
+    playbackState: track ? {
+      trackIndex: getCurrentIndex(),
+      position: audio?.currentTime || 0,
+      duration: audio?.duration || 0,
+      savedAt: Date.now(),
+    } : null,
   });
+}
+
+// Restore playback from saved room state — calculates elapsed time since savedAt
+// to advance through tracks and seek to the correct position (virtual 24/7 feel).
+// Works for ALL rooms, not just permanent ones.
+async function restorePlaybackState(roomData) {
+  if (!roomData?.playbackState) return false;
+
+  const ps = typeof roomData.playbackState === 'string'
+    ? JSON.parse(roomData.playbackState) : roomData.playbackState;
+
+  if (ps.trackIndex == null || ps.savedAt == null) return false;
+
+  const queue = getQueue();
+  if (!queue || queue.length === 0) return false;
+
+  // Calculate how many seconds have elapsed since state was saved
+  const elapsedSeconds = (Date.now() - ps.savedAt) / 1000;
+  if (elapsedSeconds < 0) return false;
+
+  // Walk through the queue starting from the saved track+position,
+  // advancing by elapsed time to find the current track and position
+  let trackIdx = ps.trackIndex;
+  let remaining = elapsedSeconds + (ps.position || 0);
+
+  // Safety: cap at a reasonable number of loops (e.g. 10 full queue cycles)
+  const maxLoops = queue.length * 10;
+  let loops = 0;
+
+  while (loops < maxLoops) {
+    if (trackIdx >= queue.length) trackIdx = 0; // wrap around
+    const trackDuration = queue[trackIdx]?.duration || 180; // default 3 min if unknown
+    if (remaining <= trackDuration) {
+      // Found the current position
+      break;
+    }
+    remaining -= trackDuration;
+    trackIdx = (trackIdx + 1) % queue.length;
+    loops++;
+  }
+
+  // Play from the calculated track and position
+  playFromQueue(trackIdx);
+
+  // Wait a moment for the audio to load, then seek to position
+  const audio = getAudioElement();
+  if (audio && remaining > 0) {
+    const doSeek = () => {
+      if (audio.duration && remaining < audio.duration) {
+        seek(remaining);
+      }
+    };
+    // Try immediately, and also on loadedmetadata in case not ready yet
+    if (audio.readyState >= 1) {
+      doSeek();
+    } else {
+      audio.addEventListener('loadedmetadata', doSeek, { once: true });
+    }
+  }
+
+  showToast('Resuming from where you left off');
+  return true;
 }
 
 function stopAnnouncing() {

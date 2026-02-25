@@ -5,9 +5,12 @@
 --   DROP POLICY IF EXISTS "Allow all playlist operations" ON playlists;
 --   DROP POLICY IF EXISTS "Allow all chat operations" ON chat_messages;
 --   DROP POLICY IF EXISTS "Allow all room operations" ON rooms;
--- To add the muted_users and banned_users columns to an existing rooms table:
+-- To add new columns to an existing rooms table:
 --   ALTER TABLE rooms ADD COLUMN IF NOT EXISTS muted_users JSONB DEFAULT '[]';
 --   ALTER TABLE rooms ADD COLUMN IF NOT EXISTS banned_users JSONB DEFAULT '[]';
+--   ALTER TABLE rooms ADD COLUMN IF NOT EXISTS host_user_id TEXT;
+--   ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_permanent BOOLEAN DEFAULT false;
+--   ALTER TABLE rooms ADD COLUMN IF NOT EXISTS playback_state JSONB DEFAULT NULL;
 
 -- ─── PLAYLISTS TABLE ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS playlists (
@@ -61,11 +64,14 @@ CREATE TABLE IF NOT EXISTS rooms (
   host_name TEXT,
   host_handle TEXT,
   host_avatar TEXT,
+  host_user_id TEXT,
   current_track JSONB,
   user_count INTEGER DEFAULT 0,
   playlist JSONB DEFAULT '[]',
   muted_users JSONB DEFAULT '[]',
   banned_users JSONB DEFAULT '[]',
+  is_permanent BOOLEAN DEFAULT false,
+  playback_state JSONB DEFAULT NULL,
   created_at TIMESTAMPTZ DEFAULT now(),
   last_active_at TIMESTAMPTZ DEFAULT now()
 );
@@ -112,3 +118,12 @@ CREATE POLICY "Anyone can create rooms" ON rooms
 
 CREATE POLICY "Anyone can update rooms" ON rooms
   FOR UPDATE USING (true) WITH CHECK (room_id IS NOT NULL AND length(room_id) > 0);
+
+-- ─── SEED PERMANENT DEMO ROOMS ─────────────────────────────
+-- These rooms always appear in the directory. Join and add music via the UI.
+INSERT INTO rooms (room_id, host_name, host_handle, host_user_id, is_permanent, user_count)
+VALUES
+  ('247room1', 'XEFUZION', 'XEFUZION', NULL, true, 0),
+  ('247room2', 'XEFUZION', 'XEFUZION', NULL, true, 0),
+  ('247room3', 'XEFUZION', 'XEFUZION', NULL, true, 0)
+ON CONFLICT (room_id) DO NOTHING;

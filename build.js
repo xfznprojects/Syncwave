@@ -29,6 +29,7 @@ const replacements = {
   '__SUPABASE_URL__': process.env.SUPABASE_URL || '',
   '__SUPABASE_ANON_KEY__': process.env.SUPABASE_ANON_KEY || '',
   '__TENOR_API_KEY__': process.env.TENOR_API_KEY || '',
+  '__ROOM_HOST_HANDLE__': process.env.ROOM_HOST_HANDLE || '',
 };
 
 for (const [placeholder, value] of Object.entries(replacements)) {

@@ -668,7 +668,6 @@ button { cursor: pointer; font-family: inherit; }
 }
 .chat-input-addon:hover {
   color: var(--accent);
-  background: var(--accent-dim);
 }
 
 /* ─── GIF PICKER ─────────────────────────────────────────── */

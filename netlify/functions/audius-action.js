@@ -55,17 +55,25 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: 'Server misconfigured — missing Audius credentials' }) };
   }
 
+  // Forward the user's OAuth token if provided (needed for write operations)
+  const authHeader = event.headers['authorization'] || event.headers['Authorization'] || '';
+
   // Build the Audius API request
   const apiPath = actionDef.path({ userId, trackId, targetUserId });
   const url = `${AUDIUS_API_BASE}${apiPath}`;
 
   try {
+    const fetchHeaders = {
+      'x-api-key': apiKey,
+      'x-api-secret': apiSecret,
+    };
+    if (authHeader) {
+      fetchHeaders['Authorization'] = authHeader;
+    }
+
     const res = await fetch(url, {
       method: actionDef.method,
-      headers: {
-        'x-api-key': apiKey,
-        'x-api-secret': apiSecret,
-      },
+      headers: fetchHeaders,
     });
 
     const responseBody = await res.text();

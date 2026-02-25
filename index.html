@@ -19,7 +19,6 @@
 </head>
 <body>
 
-  <!-- ─── HEADER ─────────────────────────────────────────── -->
   <header class="header">
     <div class="header-left">
       <a href="#/" class="logo">
@@ -36,7 +35,6 @@
     </div>
   </header>
 
-  <!-- ─── HOME VIEW ──────────────────────────────────────── -->
   <main id="home-view" class="view">
     <section class="hero">
       <h1>Listen Together</h1>
@@ -71,14 +69,9 @@
     </section>
   </main>
 
-  <!-- ─── ROOM VIEW ──────────────────────────────────────── -->
   <main id="room-view" class="view hidden">
-
-
-    <!-- Desktop Layout: 3-column -->
     <div class="room-layout">
 
-      <!-- LEFT: Chat -->
       <button class="btn-expand btn-expand-left hidden" id="expand-chat" title="Expand chat"><i class="fa-solid fa-chevron-right"></i></button>
       <div class="room-panel panel-chat tab-panel" data-panel="chat">
         <div class="panel-header"><i class="fa-solid fa-comments panel-header-icon"></i> Chat <button class="btn-collapse" data-collapse="chat" title="Collapse"><i class="fa-solid fa-chevron-left"></i></button></div>
@@ -90,7 +83,6 @@
             <button id="chat-send-btn" class="chat-input-addon" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
           </div>
         </div>
-        <!-- GIF Picker -->
         <div id="gif-picker" class="gif-picker hidden">
           <div class="gif-picker-header">
             <div class="gif-search-row">
@@ -103,16 +95,13 @@
         </div>
       </div>
 
-      <!-- CENTER: Visualizer + Player Bar -->
       <div class="room-panel panel-center tab-panel" data-panel="player">
-        <!-- Spectrum Visualizer -->
         <div class="visualizer-wrap">
           <div id="visualizer-3d" class="visualizer-3d"></div>
           <canvas id="visualizer-canvas" class="visualizer-2d"></canvas>
           <button id="btn-viz-mode" class="btn-viz-overlay" title="Change visualizer"><i class="fa-solid fa-display"></i></button>
         </div>
 
-        <!-- Inline Player Bar (between chat and sidebar) -->
         <div class="player-bar">
           <div class="player-bar-left">
             <div id="np-artwork-wrap" class="player-bar-artwork-wrap">
@@ -151,10 +140,8 @@
         </div>
       </div>
 
-      <!-- RIGHT: Listeners + Queue + Requests + Analysis -->
       <button class="btn-expand btn-expand-right hidden" id="expand-sidebar" title="Expand sidebar"><i class="fa-solid fa-chevron-left"></i></button>
       <div class="room-panel panel-sidebar">
-        <!-- Listeners (accordion) -->
         <div class="sidebar-section" data-panel="listeners">
           <div class="panel-header accordion-header" data-accordion="listeners">
             <i class="fa-solid fa-users panel-header-icon"></i> Listeners <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
@@ -165,7 +152,6 @@
           </div>
         </div>
 
-        <!-- Queue / Playlist (accordion) -->
         <div class="sidebar-section" data-panel="queue">
           <div class="panel-header accordion-header" data-accordion="queue">
             <i class="fa-solid fa-list panel-header-icon"></i> Queue <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
@@ -183,7 +169,6 @@
           </div>
         </div>
 
-        <!-- Requests (accordion) -->
         <div class="sidebar-section" data-panel="requests">
           <div class="panel-header accordion-header" data-accordion="requests">
             <i class="fa-solid fa-hand panel-header-icon"></i> Requests <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
@@ -193,7 +178,6 @@
           </div>
         </div>
 
-        <!-- Audio Analysis (accordion, at bottom) -->
         <div class="sidebar-section" data-panel="analysis">
           <div class="panel-header accordion-header" data-accordion="analysis">
             <i class="fa-solid fa-chart-bar panel-header-icon"></i> Analysis <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
@@ -218,7 +202,6 @@
                   <span id="analysis-dr" class="analysis-value">--</span>
                 </div>
               </div>
-              <!-- Stereo Waveform (inside analysis) -->
               <div class="waveform-wrap">
                 <canvas id="waveform-canvas"></canvas>
                 <div class="waveform-controls">
@@ -233,7 +216,6 @@
       </div>
     </div>
 
-    <!-- Search / Add Song Modal -->
     <div id="search-modal" class="search-modal hidden">
       <div class="search-modal-content">
         <div class="search-modal-header">
@@ -259,7 +241,6 @@
       </div>
     </div>
 
-    <!-- Chat User Context Menu -->
     <div id="chat-user-menu" class="chat-user-menu hidden">
       <button class="chat-user-menu-item" data-action="profile"><i class="fa-solid fa-user"></i> View on Audius</button>
       <button class="chat-user-menu-item chat-user-menu-danger" data-action="mute"><i class="fa-solid fa-volume-xmark"></i> Mute User</button>
@@ -267,7 +248,6 @@
       <button class="chat-user-menu-item chat-user-menu-danger" data-action="ban"><i class="fa-solid fa-ban"></i> Ban from Chat</button>
     </div>
 
-    <!-- Mobile Tab Bar -->
     <nav class="mobile-tabs">
       <button class="mobile-tab active" data-tab="player"><i class="fa-solid fa-music"></i> Player</button>
       <button class="mobile-tab" data-tab="chat"><i class="fa-solid fa-comments"></i> Chat</button>
@@ -276,7 +256,6 @@
     </nav>
   </main>
 
-  <!-- Hidden audio element -->
   <audio id="audio-player" crossorigin="anonymous" preload="auto"></audio>
 
   <script type="module" src="js/app.js"></script>

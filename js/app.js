@@ -405,6 +405,12 @@ async function enterRoom(roomId) {
   const user = getCurrentUser();
   const isCreator = user && user.handle === roomId;
 
+  // Init audio early — while the user gesture (room card click) is still active.
+  // This prevents browsers from blocking autoplay later after async DB calls.
+  initPlayer();
+  getAnalyser(); // creates AudioContext within user gesture context
+  resumeAudioContext();
+
   // Load room metadata from DB (for permanent rooms, playback state, etc.)
   let roomData = null;
   try { roomData = await dbLoadRoom(roomId); } catch { /* ignore */ }
@@ -478,10 +484,11 @@ async function enterRoom(roomId) {
       await createRoom(user);
       showToast('Room created! Share your handle to invite listeners.');
     } else {
+      const guestId = Math.floor(1000 + Math.random() * 9000);
       const guestUser = user || {
         userId: 'guest-' + Date.now(),
         handle: 'guest',
-        name: 'Guest',
+        name: `Guest${guestId}`,
         profilePicture: null,
       };
       await joinRoom(roomId, guestUser);
@@ -1228,16 +1235,16 @@ function setupPlayerControls() {
   let savedVolume = 0.8;
   if (volumeSlider) {
     setVolume(0.8);
-    volumeSlider.addEventListener('input', () => {
+    volumeSlider.oninput = () => {
       const vol = parseInt(volumeSlider.value) / 100;
       setVolume(vol);
       savedVolume = vol;
       if (muteBtn) muteBtn.innerHTML = vol === 0 ? '<i class="fa-solid fa-volume-xmark"></i>' : vol < 0.5 ? '<i class="fa-solid fa-volume-low"></i>' : '<i class="fa-solid fa-volume-high"></i>';
-    });
+    };
   }
 
   if (muteBtn) {
-    muteBtn.addEventListener('click', () => {
+    muteBtn.onclick = () => {
       const current = getVolume();
       if (current > 0) {
         savedVolume = current;
@@ -1249,7 +1256,7 @@ function setupPlayerControls() {
         if (volumeSlider) volumeSlider.value = Math.round((savedVolume || 0.8) * 100);
         muteBtn.innerHTML = savedVolume < 0.5 ? '<i class="fa-solid fa-volume-low"></i>' : '<i class="fa-solid fa-volume-high"></i>';
       }
-    });
+    };
   }
 }
 
@@ -1486,6 +1493,10 @@ function showChatUserMenu(e, userId, handle, name) {
   if (!menu) return;
 
   chatMenuTarget = { userId, handle, name };
+
+  // Hide "View on Audius" for guests (no profile to view)
+  const profileBtn = menu.querySelector('[data-action="profile"]');
+  if (profileBtn) profileBtn.style.display = userId?.startsWith('guest-') ? 'none' : '';
 
   // Show/hide kick and ban options based on host status
   const isHost = getIsHost();

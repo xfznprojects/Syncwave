@@ -1,6 +1,5 @@
-import CONFIG from './config.js';
+import { getSupabaseClient } from './supabase-client.js';
 
-let supabase = null;
 let currentChannel = null;
 let currentRoomId = null;
 let presenceState = {};
@@ -22,11 +21,7 @@ export function onRoomEvent(event, callback) {
 }
 
 function getSupabase() {
-  if (!supabase) {
-    // @supabase/supabase-js loaded via CDN → window.supabase
-    supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
-  }
-  return supabase;
+  return getSupabaseClient();
 }
 
 export function getRoomId() {
@@ -76,7 +71,10 @@ async function joinChannel(roomId, user) {
   const client = getSupabase();
 
   currentChannel = client.channel(`room:${roomId}`, {
-    config: { presence: { key: user.userId } },
+    config: {
+      presence: { key: user.userId },
+      broadcast: { self: false },
+    },
   });
 
   // Presence tracking
@@ -166,7 +164,10 @@ export async function joinLobby() {
   const client = getSupabase();
 
   lobbyChannel = client.channel('lobby', {
-    config: { presence: { key: 'lobby' } },
+    config: {
+      presence: { key: 'lobby' },
+      broadcast: { self: false },
+    },
   });
 
   lobbyChannel.on('broadcast', { event: 'room-announce' }, ({ payload }) => {

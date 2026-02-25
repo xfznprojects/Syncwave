@@ -1,12 +1,7 @@
-import CONFIG from './config.js';
-
-let supabase = null;
+import { getSupabaseClient } from './supabase-client.js';
 
 function getClient() {
-  if (!supabase) {
-    supabase = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
-  }
-  return supabase;
+  return getSupabaseClient();
 }
 
 // ─── PLAYLIST PERSISTENCE ─────────────────────────────────

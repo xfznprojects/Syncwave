@@ -110,21 +110,27 @@ export async function playTrack(track) {
   if (!audio) initPlayer();
   resumeAudioContext();
 
+  // Pause current playback before switching to avoid play() interruption
+  if (!audio.paused) audio.pause();
+
   currentTrack = track;
   const streamUrl = getStreamUrl(track.id);
   audio.src = streamUrl;
   audio.load();
 
-  try {
-    await audio.play();
-  } catch (e) {
-    console.warn('Autoplay blocked:', e);
-  }
-
   startedAt = Date.now();
 
   if (listeners.onTrackChange) listeners.onTrackChange(track);
   if (listeners.onPlayStateChange) listeners.onPlayStateChange(true);
+
+  try {
+    await audio.play();
+  } catch (e) {
+    // AbortError = interrupted by another play/pause call (harmless race condition)
+    if (e.name !== 'AbortError') {
+      console.warn('Autoplay blocked:', e);
+    }
+  }
 
   // If host, broadcast to room
   if (getIsHost()) {

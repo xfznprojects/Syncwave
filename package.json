@@ -1,0 +1,9 @@
+{
+  "name": "syncwave",
+  "version": "1.0.0",
+  "description": "SyncWave — Audius Social Listening Room. Listen to music together in perfect sync.",
+  "private": true,
+  "scripts": {
+    "dev": "npx serve ."
+  }
+}

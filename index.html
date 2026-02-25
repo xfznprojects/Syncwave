@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SyncWave — Listen Together</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <!-- ─── HEADER ─────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-left">
+      <a href="#/" class="logo">
+        <span class="logo-icon">&#9836;</span>
+        <span class="logo-text">SyncWave</span>
+      </a>
+    </div>
+    <div class="header-right">
+      <span id="auth-name" class="auth-name hidden"></span>
+      <img id="auth-avatar" class="auth-avatar hidden" alt="avatar">
+      <button id="auth-btn" class="btn btn-auth">Log In with Audius</button>
+    </div>
+  </header>
+
+  <!-- ─── HOME VIEW ──────────────────────────────────────── -->
+  <main id="home-view" class="view">
+    <section class="hero">
+      <h1>Listen Together</h1>
+      <p>Create a room, play music from Audius, and listen in perfect sync with friends.</p>
+      <div class="hero-actions">
+        <button id="create-room-btn" class="btn btn-primary">Create a Room</button>
+        <div class="join-room-group">
+          <input id="join-room-input" type="text" placeholder="Enter room name..." class="input">
+          <button id="join-room-btn" class="btn btn-secondary">Join</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="room-directory">
+      <h2>Active Rooms</h2>
+      <div id="room-grid" class="room-grid">
+        <div class="empty-state">
+          <p>No active rooms right now</p>
+          <p>Log in with Audius to create one!</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ─── ROOM VIEW ──────────────────────────────────────── -->
+  <main id="room-view" class="view hidden">
+
+    <!-- Room Header -->
+    <div class="room-header">
+      <a href="#/" class="btn-back" title="Leave room">&larr;</a>
+      <h2 id="room-title" class="room-title">Room</h2>
+      <div class="room-meta">
+        <span class="listener-icon">&#128101;</span>
+        <span id="listener-count">0</span>
+      </div>
+    </div>
+
+    <!-- Desktop Layout: 3-column -->
+    <div class="room-layout">
+
+      <!-- LEFT: Chat -->
+      <div class="room-panel panel-chat tab-panel" data-panel="chat">
+        <div class="panel-header">Chat</div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="chat-input-area">
+          <button id="gif-btn" class="btn-icon" title="Send GIF">GIF</button>
+          <input id="chat-input" type="text" class="input chat-input" placeholder="Type a message...">
+          <button id="chat-send-btn" class="btn-icon" title="Send">&#10148;</button>
+        </div>
+        <!-- GIF Picker -->
+        <div id="gif-picker" class="gif-picker hidden">
+          <input id="gif-search-input" type="text" class="input" placeholder="Search GIFs...">
+          <div id="gif-picker-grid" class="gif-picker-grid"></div>
+        </div>
+      </div>
+
+      <!-- CENTER: Player + Visualizer + Search -->
+      <div class="room-panel panel-player tab-panel" data-panel="player">
+        <!-- Visualizer -->
+        <div class="visualizer-wrap">
+          <canvas id="visualizer-canvas"></canvas>
+        </div>
+
+        <!-- Now Playing -->
+        <div class="now-playing">
+          <img id="np-artwork" class="np-artwork" alt="artwork">
+          <div class="np-info">
+            <div id="np-title" class="np-title">No track playing</div>
+            <div id="np-artist" class="np-artist"></div>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-area">
+          <span id="progress-time" class="progress-time">0:00</span>
+          <div id="progress-bar" class="progress-bar">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+          <span id="progress-duration" class="progress-time">0:00</span>
+        </div>
+
+        <!-- Controls -->
+        <div class="player-controls">
+          <button id="btn-shuffle" class="btn-icon" title="Shuffle">&#128256;</button>
+          <button id="btn-prev" class="btn-icon" title="Previous">&#9198;</button>
+          <button id="btn-playpause" class="btn-icon btn-playpause" title="Play/Pause">&#9654;</button>
+          <button id="btn-next" class="btn-icon" title="Next">&#9197;</button>
+          <button id="btn-viz-mode" class="btn-icon" title="Change visualizer">&#127912;</button>
+        </div>
+
+        <!-- Search (used by both host and guests) -->
+        <div class="search-area">
+          <input id="search-input" type="text" class="input" placeholder="Search Audius tracks...">
+          <div id="search-results" class="search-results"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Queue + Listeners + Requests -->
+      <div class="room-panel panel-sidebar">
+        <!-- Listeners -->
+        <div class="sidebar-section tab-panel" data-panel="listeners">
+          <div class="panel-header">Listeners</div>
+          <div id="listeners-list" class="listeners-list"></div>
+        </div>
+
+        <!-- Queue -->
+        <div class="sidebar-section tab-panel" data-panel="queue">
+          <div class="panel-header">Queue</div>
+          <div id="queue-list" class="queue-list"></div>
+        </div>
+
+        <!-- Requests -->
+        <div class="sidebar-section tab-panel" data-panel="requests">
+          <div class="panel-header">Requests</div>
+          <div id="requests-list" class="requests-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile Tab Bar -->
+    <nav class="mobile-tabs">
+      <button class="mobile-tab active" data-tab="player">&#9835; Player</button>
+      <button class="mobile-tab" data-tab="chat">&#128172; Chat</button>
+      <button class="mobile-tab" data-tab="queue">&#9776; Queue</button>
+      <button class="mobile-tab" data-tab="requests">&#9996; Requests</button>
+    </nav>
+  </main>
+
+  <!-- Hidden audio element -->
+  <audio id="audio-player" crossorigin="anonymous" preload="auto"></audio>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

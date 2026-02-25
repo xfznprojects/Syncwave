@@ -78,7 +78,9 @@ export async function getUserFavorites(userId, limit = 25, offset = 0) {
 // Resolve an Audius URL (track, playlist, or user) to its API object
 export async function resolveUrl(url) {
   const data = await apiFetch(`/resolve?url=${encodeURIComponent(url)}`);
-  return data.data;
+  // Playlists return data as an array with one element; unwrap it
+  const result = data.data;
+  return Array.isArray(result) ? result[0] : result;
 }
 
 // Get tracks from a playlist by ID

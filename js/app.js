@@ -1250,10 +1250,10 @@ function setupPlayerControls() {
   const vizBtn = document.getElementById('btn-viz-mode');
   const progressBar = document.getElementById('progress-bar');
 
-  // Dim playback controls for non-hosts
+  // Dim playback controls for non-hosts, unlock for hosts
   const controlsWrap = document.querySelector('.player-controls');
-  if (controlsWrap && !getIsHost()) {
-    controlsWrap.classList.add('controls-locked');
+  if (controlsWrap) {
+    controlsWrap.classList.toggle('controls-locked', !getIsHost());
   }
   const volumeSlider = document.getElementById('volume-slider');
   const muteBtn = document.getElementById('btn-mute');

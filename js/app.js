@@ -159,10 +159,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   onPlayerEvent('onQueueChange', (queue, idx) => {
     renderQueue(queue, idx);
-    // Persist playlist
+    // Persist playlist to DB (logged-in users only)
     const user = getCurrentUser();
     if (user) dbSavePlaylist(user.userId, queue);
-    else savePlaylistToStorage(); // fallback for guests
     // Persist room to DB on queue change (host only)
     persistRoomToDB();
   });
@@ -568,12 +567,9 @@ async function enterRoom(roomId) {
       }
 
       // Fall back to user's personal playlist
-      if (!restored && getQueue().length === 0) {
+      if (!restored && getQueue().length === 0 && user) {
         let saved = null;
-        if (user) {
-          try { saved = await dbLoadPlaylist(user.userId); } catch { /* fallback below */ }
-        }
-        if (!saved) saved = loadPlaylistFromStorage();
+        try { saved = await dbLoadPlaylist(user.userId); } catch { /* ignore */ }
         if (saved && saved.length > 0) {
           loadQueueFromData(saved, false);
           showToast(`Restored ${saved.length} tracks from last session`);
@@ -614,6 +610,7 @@ function exitRoom() {
   stopAnnouncing();
   leaveRoom();
   stopSyncLoop();
+  pause();
   stopVisualizer();
   destroyVis();
   stopWaveform();
@@ -1676,25 +1673,6 @@ function setupQueueToolbar() {
 }
 
 // ─── PLAYLIST PERSISTENCE (localStorage) ────────────────────
-
-const PLAYLIST_STORAGE_KEY = 'syncwave_playlist';
-
-function savePlaylistToStorage() {
-  const queue = getQueue();
-  if (queue.length > 0) {
-    localStorage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(queue));
-  } else {
-    localStorage.removeItem(PLAYLIST_STORAGE_KEY);
-  }
-}
-
-function loadPlaylistFromStorage() {
-  try {
-    const data = localStorage.getItem(PLAYLIST_STORAGE_KEY);
-    if (data) return JSON.parse(data);
-  } catch { /* ignore */ }
-  return null;
-}
 
 // ─── CHAT HISTORY PERSISTENCE ───────────────────────────────
 

@@ -1,5 +1,5 @@
 import CONFIG from './config.js';
-import { searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, getUserTracks, getUserFavorites } from './audius.js';
+import { searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl } from './audius.js';
 import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout } from './auth.js';
 import {
   createRoom, joinRoom, leaveRoom, broadcast, onRoomEvent,
@@ -162,7 +162,7 @@ function renderAuthUI() {
   const user = getCurrentUser();
 
   if (user) {
-    authBtn.textContent = 'Logout';
+    authBtn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Logout';
     authBtn.onclick = () => { logout(); renderAuthUI(); };
     authName.textContent = user.name;
     authName.classList.remove('hidden');
@@ -171,7 +171,7 @@ function renderAuthUI() {
       authAvatar.classList.remove('hidden');
     }
   } else {
-    authBtn.textContent = 'Log In with Audius';
+    authBtn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Log In with Audius';
     authBtn.onclick = async () => {
       try {
         await loginWithAudius();
@@ -411,6 +411,7 @@ function exitRoom() {
   destroyWaveform();
   stopAnalysis();
   destroyAnalysis();
+  stopPreview();
   clearChat();
   songRequests = [];
 }
@@ -419,9 +420,48 @@ function exitRoom() {
 
 let searchTimeout = null;
 let activeSearchTab = 'trending';
+const PAGE_SIZE = 25;
+let searchPage = 0;
+let searchLastQuery = '';
+let searchLastLabel = '';
+let searchLastTracks = [];
+
+// Preview audio — separate from main player so preview doesn't disrupt the queue
+let previewAudio = null;
+let previewingTrackId = null;
+
+function stopPreview() {
+  if (previewAudio) {
+    previewAudio.pause();
+    previewAudio.src = '';
+  }
+  previewingTrackId = null;
+  // Remove active state from any preview buttons
+  document.querySelectorAll('.btn-preview.active').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.track-item.previewing').forEach(el => el.classList.remove('previewing'));
+}
+
+function togglePreview(track, btn, trackItem) {
+  if (previewingTrackId === track.id) {
+    stopPreview();
+    return;
+  }
+  stopPreview();
+  if (!previewAudio) {
+    previewAudio = new Audio();
+    previewAudio.volume = 0.5;
+    previewAudio.addEventListener('ended', stopPreview);
+  }
+  previewAudio.src = getStreamUrl(track.id);
+  previewAudio.play().catch(() => {});
+  previewingTrackId = track.id;
+  btn.classList.add('active');
+  trackItem.classList.add('previewing');
+}
 
 function setupSearch() {
   const input = document.getElementById('search-input');
+  const urlArea = document.getElementById('url-input-area');
   const tabs = document.querySelectorAll('.search-tab');
 
   // Show My Tracks / Favorites tabs for logged-in users
@@ -437,17 +477,22 @@ function setupSearch() {
       tabs.forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       activeSearchTab = tab.dataset.searchTab;
+      searchPage = 0;
 
-      // Show/hide search input
+      // Show/hide inputs
       if (input) input.style.display = activeSearchTab === 'search' ? '' : 'none';
+      if (urlArea) urlArea.style.display = activeSearchTab === 'url' ? '' : 'none';
 
-      // Clear previous results immediately to avoid stale content showing
+      // Clear previous results
       const container = document.getElementById('search-results');
       if (container) container.innerHTML = '<div class="empty-state">Loading...</div>';
+
+      stopPreview();
 
       // Load content for tab
       if (activeSearchTab === 'trending') loadTrending();
       else if (activeSearchTab === 'search') { input.focus(); if (input.value.trim()) triggerSearch(input.value.trim()); else if (container) container.innerHTML = '<div class="empty-state">Type to search...</div>'; }
+      else if (activeSearchTab === 'url') { if (container) container.innerHTML = '<div class="empty-state">Paste an Audius track URL above</div>'; }
       else if (activeSearchTab === 'mytracks') loadMyTracks();
       else if (activeSearchTab === 'favorites') loadFavorites();
     });
@@ -456,23 +501,79 @@ function setupSearch() {
   if (input) {
     input.addEventListener('input', () => {
       clearTimeout(searchTimeout);
+      searchPage = 0;
       searchTimeout = setTimeout(() => {
         triggerSearch(input.value.trim());
       }, 300);
     });
   }
+
+  // URL input
+  setupUrlInput();
+}
+
+function setupUrlInput() {
+  const urlInput = document.getElementById('audius-url-input');
+  const urlBtn = document.getElementById('audius-url-add');
+  const urlStatus = document.getElementById('url-status');
+  if (!urlInput || !urlBtn) return;
+
+  async function addFromUrl() {
+    const url = urlInput.value.trim();
+    if (!url) return;
+
+    // Validate it's an Audius URL
+    try {
+      const parsed = new URL(url);
+      if (!parsed.hostname.endsWith('audius.co')) {
+        urlStatus.textContent = 'Please enter a valid audius.co URL';
+        urlStatus.className = 'url-status error';
+        return;
+      }
+    } catch {
+      urlStatus.textContent = 'Invalid URL format';
+      urlStatus.className = 'url-status error';
+      return;
+    }
+
+    urlStatus.textContent = 'Resolving track...';
+    urlStatus.className = 'url-status';
+
+    try {
+      const result = await resolveUrl(url);
+      if (!result || !result.id) {
+        urlStatus.textContent = 'Could not find a track at that URL';
+        urlStatus.className = 'url-status error';
+        return;
+      }
+      addToQueue(result);
+      urlStatus.textContent = `Added "${result.title}" to queue`;
+      urlStatus.className = 'url-status success';
+      urlInput.value = '';
+      showToast(`Added "${result.title}" to queue`);
+    } catch (e) {
+      urlStatus.textContent = 'Failed to resolve URL: ' + e.message;
+      urlStatus.className = 'url-status error';
+    }
+  }
+
+  urlBtn.addEventListener('click', addFromUrl);
+  urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addFromUrl();
+  });
 }
 
 async function triggerSearch(query) {
   if (query.length >= 2) {
-    const results = await searchTracks(query);
+    const results = await searchTracks(query, PAGE_SIZE, searchPage * PAGE_SIZE);
+    searchLastQuery = query;
     renderSearchResults(results, 'Search Results');
   }
 }
 
 async function loadTrending() {
   try {
-    const trending = await getTrending();
+    const trending = await getTrending(null, 'week', PAGE_SIZE, searchPage * PAGE_SIZE);
     renderSearchResults(trending, 'Trending on Audius');
   } catch { /* optional */ }
 }
@@ -481,7 +582,7 @@ async function loadMyTracks() {
   const user = getCurrentUser();
   if (!user) return;
   try {
-    const tracks = await getUserTracks(user.userId);
+    const tracks = await getUserTracks(user.userId, PAGE_SIZE, searchPage * PAGE_SIZE);
     renderSearchResults(tracks, 'My Tracks');
   } catch { renderSearchResults([], 'My Tracks'); }
 }
@@ -490,19 +591,30 @@ async function loadFavorites() {
   const user = getCurrentUser();
   if (!user) return;
   try {
-    const favs = await getUserFavorites(user.userId);
-    // Favorites API wraps tracks in a `favorite_item` — extract the track
+    const favs = await getUserFavorites(user.userId, PAGE_SIZE, searchPage * PAGE_SIZE);
     const tracks = favs.map(f => f.favorite_item || f).filter(t => t.id);
     renderSearchResults(tracks, 'Favorites');
   } catch { renderSearchResults([], 'Favorites'); }
+}
+
+function reloadCurrentTab() {
+  if (activeSearchTab === 'trending') loadTrending();
+  else if (activeSearchTab === 'search') triggerSearch(searchLastQuery);
+  else if (activeSearchTab === 'mytracks') loadMyTracks();
+  else if (activeSearchTab === 'favorites') loadFavorites();
 }
 
 function renderSearchResults(tracks, label = 'Search Results') {
   const container = document.getElementById('search-results');
   if (!container) return;
 
+  searchLastLabel = label;
+  searchLastTracks = tracks || [];
+
   if (!tracks || tracks.length === 0) {
-    container.innerHTML = '<div class="empty-state">No tracks found</div>';
+    container.innerHTML = searchPage > 0
+      ? '<div class="empty-state">No more tracks</div>' + renderPagination(0)
+      : '<div class="empty-state">No tracks found</div>';
     return;
   }
 
@@ -519,14 +631,17 @@ function renderSearchResults(tracks, label = 'Search Results') {
       </div>
       <div class="track-actions">
         ${getIsHost() ? `
-          <button class="btn-icon btn-play-now" title="Play now">&#9654;</button>
-          <button class="btn-icon btn-add-queue" title="Add to queue">+</button>
+          <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
+          <button class="btn-icon btn-add-queue" title="Add to queue"><i class="fa-solid fa-plus"></i></button>
         ` : isLoggedIn() ? `
-          <button class="btn-icon btn-request" title="Request song">&#9996;</button>
-        ` : ''}
+          <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
+          <button class="btn-icon btn-request" title="Request song"><i class="fa-solid fa-hand"></i></button>
+        ` : `
+          <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
+        `}
       </div>
     </div>
-  `).join('');
+  `).join('') + renderPagination(tracks.length);
 
   // Apply artwork fallback
   container.querySelectorAll('.track-item').forEach((item, i) => {
@@ -534,21 +649,16 @@ function renderSearchResults(tracks, label = 'Search Results') {
     if (img && tracks[i]) setArtworkWithFallback(img, tracks[i], '150x150');
   });
 
-  // Event handlers
-  container.querySelectorAll('.btn-play-now').forEach((btn, i) => {
+  // Preview buttons (available to everyone)
+  container.querySelectorAll('.btn-preview').forEach((btn, i) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const wasEmpty = getQueue().length === 0;
-      addToQueue(tracks[i]);
-      // Only force-play if nothing was playing; otherwise addToQueue handles auto-start
-      if (wasEmpty) {
-        playFromQueue(0);
-      } else {
-        showToast(`Added "${tracks[i].title}" — plays next`);
-      }
+      const trackItem = btn.closest('.track-item');
+      togglePreview(tracks[i], btn, trackItem);
     });
   });
 
+  // Add to queue (host only)
   container.querySelectorAll('.btn-add-queue').forEach((btn, i) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -557,6 +667,7 @@ function renderSearchResults(tracks, label = 'Search Results') {
     });
   });
 
+  // Request song (non-host logged-in users)
   container.querySelectorAll('.btn-request').forEach((btn, i) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -564,6 +675,28 @@ function renderSearchResults(tracks, label = 'Search Results') {
       showToast(`Requested "${tracks[i].title}"`);
     });
   });
+
+  // Pagination buttons
+  const prevPageBtn = container.querySelector('.btn-page-prev');
+  const nextPageBtn = container.querySelector('.btn-page-next');
+  if (prevPageBtn) prevPageBtn.addEventListener('click', () => { searchPage--; reloadCurrentTab(); });
+  if (nextPageBtn) nextPageBtn.addEventListener('click', () => { searchPage++; reloadCurrentTab(); });
+}
+
+function renderPagination(resultCount) {
+  // Only show pagination if there are results or we're past page 0
+  if (searchPage === 0 && resultCount < PAGE_SIZE) return '';
+
+  const hasPrev = searchPage > 0;
+  const hasNext = resultCount >= PAGE_SIZE;
+
+  return `
+    <div class="search-pagination">
+      <button class="btn-icon btn-page-prev" ${hasPrev ? '' : 'disabled'} title="Previous page"><i class="fa-solid fa-chevron-left"></i></button>
+      <span class="search-page-info">Page ${searchPage + 1}</span>
+      <button class="btn-icon btn-page-next" ${hasNext ? '' : 'disabled'} title="Next page"><i class="fa-solid fa-chevron-right"></i></button>
+    </div>
+  `;
 }
 
 // ─── NOW PLAYING ────────────────────────────────────────────
@@ -589,7 +722,7 @@ function renderNowPlaying(track) {
 
 function updatePlayButton(playing) {
   const btn = document.getElementById('btn-playpause');
-  if (btn) btn.innerHTML = playing ? '&#10074;&#10074;' : '&#9654;';
+  if (btn) btn.innerHTML = playing ? '<i class="fa-solid fa-pause"></i>' : '<i class="fa-solid fa-play"></i>';
 }
 
 function updateProgress(state) {
@@ -609,7 +742,6 @@ function setupPlayerControls() {
   const prevBtn = document.getElementById('btn-prev');
   const nextBtn = document.getElementById('btn-next');
   const vizBtn = document.getElementById('btn-viz-mode');
-  const shuffleBtn = document.getElementById('btn-shuffle');
   const progressBar = document.getElementById('progress-bar');
   const volumeSlider = document.getElementById('volume-slider');
   const muteBtn = document.getElementById('btn-mute');
@@ -622,14 +754,6 @@ function setupPlayerControls() {
   }
   if (prevBtn) prevBtn.addEventListener('click', playPrevious);
   if (nextBtn) nextBtn.addEventListener('click', playNext);
-
-  if (shuffleBtn) {
-    shuffleBtn.addEventListener('click', () => {
-      const shuffled = toggleShuffle();
-      shuffleBtn.classList.toggle('active', shuffled);
-      showToast(shuffled ? 'Shuffle on' : 'Shuffle off');
-    });
-  }
 
   if (vizBtn) {
     vizBtn.addEventListener('click', () => {
@@ -707,7 +831,7 @@ function setupPlayerControls() {
       const vol = parseInt(volumeSlider.value) / 100;
       setVolume(vol);
       savedVolume = vol;
-      if (muteBtn) muteBtn.innerHTML = vol === 0 ? '&#128263;' : vol < 0.5 ? '&#128265;' : '&#128264;';
+      if (muteBtn) muteBtn.innerHTML = vol === 0 ? '<i class="fa-solid fa-volume-xmark"></i>' : vol < 0.5 ? '<i class="fa-solid fa-volume-low"></i>' : '<i class="fa-solid fa-volume-high"></i>';
     });
   }
 
@@ -718,11 +842,11 @@ function setupPlayerControls() {
         savedVolume = current;
         setVolume(0);
         if (volumeSlider) volumeSlider.value = 0;
-        muteBtn.innerHTML = '&#128263;';
+        muteBtn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
       } else {
         setVolume(savedVolume || 0.8);
         if (volumeSlider) volumeSlider.value = Math.round((savedVolume || 0.8) * 100);
-        muteBtn.innerHTML = savedVolume < 0.5 ? '&#128265;' : '&#128264;';
+        muteBtn.innerHTML = savedVolume < 0.5 ? '<i class="fa-solid fa-volume-low"></i>' : '<i class="fa-solid fa-volume-high"></i>';
       }
     });
   }
@@ -830,6 +954,7 @@ function openSearchModal() {
 function closeSearchModal() {
   const modal = document.getElementById('search-modal');
   if (modal) modal.classList.add('hidden');
+  stopPreview();
 }
 
 // ─── CHAT USER CONTEXT MENU (Mute/Kick) ─────────────────────
@@ -935,20 +1060,20 @@ function renderQueue(queue, currentIndex) {
 
   container.innerHTML = queue.map((track, i) => `
     <div class="queue-item ${i === currentIndex ? 'queue-active' : ''}" data-index="${i}" ${isHostUser ? 'draggable="true"' : ''}>
-      ${isHostUser ? '<span class="queue-drag-handle" title="Drag to reorder">&#9776;</span>' : ''}
+      ${isHostUser ? '<span class="queue-drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></span>' : ''}
       <span class="queue-number">${i + 1}</span>
       <div class="queue-track-info">
         <span class="queue-track-title">${escapeHtml(track.title)}</span>
         <span class="queue-track-artist">${escapeHtml(track.user?.name || '')}</span>
       </div>
-      ${isHostUser ? `<button class="btn-icon btn-remove-queue" data-index="${i}" title="Remove">&times;</button>` : ''}
+      ${isHostUser ? `<button class="btn-icon btn-remove-queue" data-index="${i}" title="Remove"><i class="fa-solid fa-xmark"></i></button>` : ''}
     </div>
   `).join('');
 
   container.querySelectorAll('.queue-item').forEach(item => {
     item.addEventListener('click', (e) => {
       // Don't trigger play when clicking drag handle or remove button
-      if (e.target.classList.contains('queue-drag-handle') || e.target.classList.contains('btn-remove-queue')) return;
+      if (e.target.closest('.queue-drag-handle') || e.target.closest('.btn-remove-queue')) return;
       if (isHostUser) playFromQueue(parseInt(item.dataset.index));
     });
 
@@ -1004,10 +1129,25 @@ function renderQueue(queue, currentIndex) {
 // ─── QUEUE TOOLBAR ──────────────────────────────────────────
 
 function setupQueueToolbar() {
+  const shuffleBtn = document.getElementById('btn-shuffle');
   const exportBtn = document.getElementById('btn-export-playlist');
   const importBtn = document.getElementById('btn-import-playlist');
   const importInput = document.getElementById('import-playlist-input');
   const clearBtn = document.getElementById('btn-clear-queue');
+
+  // Shuffle — host only
+  if (shuffleBtn) {
+    if (getIsHost()) {
+      shuffleBtn.style.display = '';
+      shuffleBtn.addEventListener('click', () => {
+        const shuffled = toggleShuffle();
+        shuffleBtn.classList.toggle('active', shuffled);
+        showToast(shuffled ? 'Shuffle on' : 'Shuffle off');
+      });
+    } else {
+      shuffleBtn.style.display = 'none';
+    }
+  }
 
   if (exportBtn) {
     exportBtn.addEventListener('click', () => {
@@ -1108,25 +1248,23 @@ function renderListeners(users) {
 
   if (countEl) countEl.textContent = users.length;
 
+  // Remove any existing floating popup from a previous render
+  const oldPopup = document.getElementById('listener-floating-popup');
+  if (oldPopup) oldPopup.remove();
+
   container.innerHTML = users.map(user => {
     const safeAvatar = user.avatar && typeof user.avatar === 'string' && (user.avatar.startsWith('https://') || user.avatar.startsWith('http://'))
       ? escapeHtml(user.avatar) : '';
     const handle = escapeHtml(user.handle || 'anonymous');
     const name = escapeHtml(user.name || user.handle || 'Anonymous');
-    const profileUrl = `https://audius.co/${escapeHtml(user.handle || '')}`;
     return `
-    <div class="listener-item ${user.isHost ? 'is-host' : ''}">
+    <div class="listener-item ${user.isHost ? 'is-host' : ''}"
+         data-handle="${handle}" data-name="${name}" data-is-host="${user.isHost ? '1' : ''}">
       ${safeAvatar
         ? `<img class="listener-avatar" src="${safeAvatar}" alt="${handle}" loading="lazy">`
         : ''}
       <div class="listener-avatar-fallback" ${safeAvatar ? 'style="display:none"' : ''}>${escapeHtml((user.name || '?')[0].toUpperCase())}</div>
-      ${user.isHost ? '<div class="listener-host-dot" title="Host">&#9733;</div>' : ''}
-      <div class="listener-popup">
-        <div class="listener-popup-name">${name}</div>
-        <div class="listener-popup-handle">@${handle}</div>
-        ${user.isHost ? '<div><span class="host-badge">HOST</span></div>' : ''}
-        <a class="listener-popup-link" href="${profileUrl}" target="_blank" rel="noopener noreferrer">View on Audius</a>
-      </div>
+      ${user.isHost ? '<div class="listener-host-dot" title="Host"><i class="fa-solid fa-crown"></i></div>' : ''}
     </div>
   `;
   }).join('');
@@ -1140,34 +1278,52 @@ function renderListeners(users) {
     });
   });
 
-  // Position popups with fixed positioning to escape overflow:hidden parents
-  container.querySelectorAll('.listener-item').forEach(item => {
-    const popup = item.querySelector('.listener-popup');
-    if (!popup) return;
+  // Create a single floating popup on document.body (fully outside sidebar overflow)
+  const floatingPopup = document.createElement('div');
+  floatingPopup.id = 'listener-floating-popup';
+  floatingPopup.className = 'listener-popup';
+  floatingPopup.innerHTML = `
+    <div class="listener-popup-name"></div>
+    <div class="listener-popup-handle"></div>
+    <div class="listener-popup-host"></div>
+    <a class="listener-popup-link" href="#" target="_blank" rel="noopener noreferrer">View on Audius</a>
+  `;
+  document.body.appendChild(floatingPopup);
 
+  container.querySelectorAll('.listener-item').forEach(item => {
     item.addEventListener('mouseenter', () => {
+      const handle = item.dataset.handle;
+      const name = item.dataset.name;
+      const isHost = item.dataset.isHost === '1';
+      const profileUrl = `https://audius.co/${handle}`;
+
+      floatingPopup.querySelector('.listener-popup-name').textContent = name;
+      floatingPopup.querySelector('.listener-popup-handle').textContent = '@' + handle;
+      floatingPopup.querySelector('.listener-popup-host').innerHTML = isHost ? '<span class="host-badge">HOST</span>' : '';
+      floatingPopup.querySelector('.listener-popup-link').href = profileUrl;
+
+      floatingPopup.style.display = 'block';
+
       const rect = item.getBoundingClientRect();
-      popup.style.display = 'block';
-      // Position above the avatar, centered
-      const popupW = popup.offsetWidth;
+      const popupW = floatingPopup.offsetWidth;
+      const popupH = floatingPopup.offsetHeight;
       let left = rect.left + rect.width / 2 - popupW / 2;
-      let top = rect.top - popup.offsetHeight - 8;
-      // Keep within viewport
+      let top = rect.top - popupH - 8;
+
       if (left < 4) left = 4;
       if (left + popupW > window.innerWidth - 4) left = window.innerWidth - popupW - 4;
       if (top < 4) {
-        // Show below instead
         top = rect.bottom + 8;
-        popup.classList.add('below');
+        floatingPopup.classList.add('below');
       } else {
-        popup.classList.remove('below');
+        floatingPopup.classList.remove('below');
       }
-      popup.style.left = left + 'px';
-      popup.style.top = top + 'px';
+      floatingPopup.style.left = left + 'px';
+      floatingPopup.style.top = top + 'px';
     });
 
     item.addEventListener('mouseleave', () => {
-      popup.style.display = 'none';
+      floatingPopup.style.display = 'none';
     });
   });
 }

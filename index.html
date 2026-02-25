@@ -6,6 +6,7 @@
   <title>SyncWave — Listen Together</title>
   <link rel="stylesheet" href="css/style.css">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script type="importmap">
   {
@@ -22,14 +23,14 @@
   <header class="header">
     <div class="header-left">
       <a href="#/" class="logo">
-        <span class="logo-icon">&#9836;</span>
+        <span class="logo-icon"><i class="fa-solid fa-wave-square"></i></span>
         <span class="logo-text">SyncWave</span>
       </a>
     </div>
     <div class="header-right">
       <span id="auth-name" class="auth-name hidden"></span>
       <img id="auth-avatar" class="auth-avatar hidden" alt="avatar">
-      <button id="auth-btn" class="btn btn-auth">Log In with Audius</button>
+      <button id="auth-btn" class="btn btn-auth"><i class="fa-solid fa-right-to-bracket"></i> Log In with Audius</button>
     </div>
   </header>
 
@@ -39,10 +40,10 @@
       <h1>Listen Together</h1>
       <p>Create a room, play music from Audius, and listen in perfect sync with friends.</p>
       <div class="hero-actions">
-        <button id="create-room-btn" class="btn btn-primary">Create a Room</button>
+        <button id="create-room-btn" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Create a Room</button>
         <div class="join-room-group">
           <input id="join-room-input" type="text" placeholder="Enter room name..." class="input">
-          <button id="join-room-btn" class="btn btn-secondary">Join</button>
+          <button id="join-room-btn" class="btn btn-secondary"><i class="fa-solid fa-arrow-right-to-bracket"></i> Join</button>
         </div>
       </div>
     </section>
@@ -63,10 +64,10 @@
 
     <!-- Room Header -->
     <div class="room-header">
-      <a href="#/" class="btn-back" title="Leave room">&larr;</a>
+      <a href="#/" class="btn-back" title="Leave room"><i class="fa-solid fa-arrow-left"></i></a>
       <h2 id="room-title" class="room-title">Room</h2>
       <div class="room-meta">
-        <span class="listener-icon">&#128101;</span>
+        <span class="listener-icon"><i class="fa-solid fa-headphones"></i></span>
         <span id="listener-count">0</span>
       </div>
     </div>
@@ -75,14 +76,14 @@
     <div class="room-layout">
 
       <!-- LEFT: Chat -->
-      <button class="btn-expand btn-expand-left hidden" id="expand-chat" title="Expand chat">&#10094;</button>
+      <button class="btn-expand btn-expand-left hidden" id="expand-chat" title="Expand chat"><i class="fa-solid fa-chevron-right"></i></button>
       <div class="room-panel panel-chat tab-panel" data-panel="chat">
-        <div class="panel-header">Chat <button class="btn-collapse" data-collapse="chat" title="Collapse">&#10094;</button></div>
+        <div class="panel-header"><i class="fa-solid fa-comments panel-header-icon"></i> Chat <button class="btn-collapse" data-collapse="chat" title="Collapse"><i class="fa-solid fa-chevron-left"></i></button></div>
         <div id="chat-messages" class="chat-messages"></div>
         <div class="chat-input-area">
-          <button id="gif-btn" class="btn-icon" title="Send GIF">GIF</button>
+          <button id="gif-btn" class="btn-icon" title="Send GIF"><i class="fa-solid fa-image"></i></button>
           <input id="chat-input" type="text" class="input chat-input" placeholder="Type a message...">
-          <button id="chat-send-btn" class="btn-icon" title="Send">&#10148;</button>
+          <button id="chat-send-btn" class="btn-icon" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
         </div>
         <!-- GIF Picker -->
         <div id="gif-picker" class="gif-picker hidden">
@@ -112,11 +113,10 @@
           </div>
           <div class="player-bar-center">
             <div class="player-controls">
-              <button id="btn-shuffle" class="btn-icon" title="Shuffle">&#128256;</button>
-              <button id="btn-prev" class="btn-icon" title="Previous">&#9198;</button>
-              <button id="btn-playpause" class="btn-icon btn-playpause" title="Play/Pause">&#9654;</button>
-              <button id="btn-next" class="btn-icon" title="Next">&#9197;</button>
-              <button id="btn-viz-mode" class="btn-icon" title="Change visualizer">&#127912;</button>
+              <button id="btn-prev" class="btn-icon" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
+              <button id="btn-playpause" class="btn-icon btn-playpause" title="Play/Pause"><i class="fa-solid fa-play"></i></button>
+              <button id="btn-next" class="btn-icon" title="Next"><i class="fa-solid fa-forward-step"></i></button>
+              <button id="btn-viz-mode" class="btn-icon" title="Change visualizer"><i class="fa-solid fa-display"></i></button>
             </div>
             <div class="progress-area">
               <span id="progress-time" class="progress-time">0:00</span>
@@ -128,7 +128,7 @@
           </div>
           <div class="player-bar-right">
             <div class="volume-control">
-              <button id="btn-mute" class="btn-icon" title="Mute">&#128264;</button>
+              <button id="btn-mute" class="btn-icon" title="Mute"><i class="fa-solid fa-volume-high"></i></button>
               <input id="volume-slider" type="range" min="0" max="100" value="80" class="volume-slider">
             </div>
           </div>
@@ -136,13 +136,13 @@
       </div>
 
       <!-- RIGHT: Listeners + Queue + Requests + Analysis -->
-      <button class="btn-expand btn-expand-right hidden" id="expand-sidebar" title="Expand sidebar">&#10095;</button>
+      <button class="btn-expand btn-expand-right hidden" id="expand-sidebar" title="Expand sidebar"><i class="fa-solid fa-chevron-left"></i></button>
       <div class="room-panel panel-sidebar">
         <!-- Listeners (accordion) -->
         <div class="sidebar-section" data-panel="listeners">
           <div class="panel-header accordion-header" data-accordion="listeners">
-            Listeners <span class="accordion-arrow">&#9660;</span>
-            <button class="btn-collapse" data-collapse="sidebar" title="Collapse">&#10095;</button>
+            <i class="fa-solid fa-users panel-header-icon"></i> Listeners <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+            <button class="btn-collapse" data-collapse="sidebar" title="Collapse"><i class="fa-solid fa-chevron-right"></i></button>
           </div>
           <div class="accordion-body open" data-accordion-body="listeners">
             <div id="listeners-list" class="listeners-list"></div>
@@ -152,12 +152,13 @@
         <!-- Queue / Playlist (accordion) -->
         <div class="sidebar-section" data-panel="queue">
           <div class="panel-header accordion-header" data-accordion="queue">
-            Queue <span class="accordion-arrow">&#9660;</span>
+            <i class="fa-solid fa-list panel-header-icon"></i> Queue <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
             <div class="queue-toolbar">
-              <button id="btn-add-song" class="btn-icon btn-toolbar" title="Add song">&#43;</button>
-              <button id="btn-export-playlist" class="btn-icon btn-toolbar" title="Export playlist">&#128190;</button>
-              <button id="btn-import-playlist" class="btn-icon btn-toolbar" title="Import playlist">&#128194;</button>
-              <button id="btn-clear-queue" class="btn-icon btn-toolbar" title="Clear queue">&#128465;</button>
+              <button id="btn-shuffle" class="btn-icon btn-toolbar" title="Shuffle"><i class="fa-solid fa-shuffle"></i></button>
+              <button id="btn-add-song" class="btn-icon btn-toolbar" title="Add song"><i class="fa-solid fa-plus"></i></button>
+              <button id="btn-export-playlist" class="btn-icon btn-toolbar" title="Export playlist"><i class="fa-solid fa-download"></i></button>
+              <button id="btn-import-playlist" class="btn-icon btn-toolbar" title="Import playlist"><i class="fa-solid fa-upload"></i></button>
+              <button id="btn-clear-queue" class="btn-icon btn-toolbar" title="Clear queue"><i class="fa-solid fa-trash-can"></i></button>
               <input type="file" id="import-playlist-input" accept=".json" style="display:none">
             </div>
           </div>
@@ -169,7 +170,7 @@
         <!-- Requests (accordion) -->
         <div class="sidebar-section" data-panel="requests">
           <div class="panel-header accordion-header" data-accordion="requests">
-            Requests <span class="accordion-arrow">&#9660;</span>
+            <i class="fa-solid fa-hand panel-header-icon"></i> Requests <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
           </div>
           <div class="accordion-body open" data-accordion-body="requests">
             <div id="requests-list" class="requests-list"></div>
@@ -179,7 +180,7 @@
         <!-- Audio Analysis (accordion, at bottom) -->
         <div class="sidebar-section" data-panel="analysis">
           <div class="panel-header accordion-header" data-accordion="analysis">
-            Analysis <span class="accordion-arrow">&#9660;</span>
+            <i class="fa-solid fa-chart-bar panel-header-icon"></i> Analysis <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
           </div>
           <div class="accordion-body open" data-accordion-body="analysis">
             <div id="analysis-display" class="analysis-display">
@@ -205,9 +206,9 @@
               <div class="waveform-wrap">
                 <canvas id="waveform-canvas"></canvas>
                 <div class="waveform-controls">
-                  <button id="waveform-zoom-in" class="btn-icon btn-waveform" title="Zoom in">+</button>
+                  <button id="waveform-zoom-in" class="btn-icon btn-waveform" title="Zoom in"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
                   <span id="waveform-zoom-level" class="waveform-zoom-label">1.0x</span>
-                  <button id="waveform-zoom-out" class="btn-icon btn-waveform" title="Zoom out">&minus;</button>
+                  <button id="waveform-zoom-out" class="btn-icon btn-waveform" title="Zoom out"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
                 </div>
               </div>
             </div>
@@ -221,32 +222,40 @@
       <div class="search-modal-content">
         <div class="search-modal-header">
           <h3>Add Song</h3>
-          <button id="search-modal-close" class="btn-icon" title="Close">&times;</button>
+          <button id="search-modal-close" class="btn-icon" title="Close"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="search-tabs">
-          <button class="search-tab active" data-search-tab="trending">Trending</button>
-          <button class="search-tab" data-search-tab="search">Search</button>
-          <button class="search-tab" data-search-tab="mytracks" id="tab-mytracks" style="display:none">My Tracks</button>
-          <button class="search-tab" data-search-tab="favorites" id="tab-favorites" style="display:none">Favorites</button>
+          <button class="search-tab active" data-search-tab="trending"><i class="fa-solid fa-fire"></i> Trending</button>
+          <button class="search-tab" data-search-tab="search"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+          <button class="search-tab" data-search-tab="url"><i class="fa-solid fa-link"></i> URL</button>
+          <button class="search-tab" data-search-tab="mytracks" id="tab-mytracks" style="display:none"><i class="fa-solid fa-compact-disc"></i> My Tracks</button>
+          <button class="search-tab" data-search-tab="favorites" id="tab-favorites" style="display:none"><i class="fa-solid fa-heart"></i> Favorites</button>
         </div>
         <input id="search-input" type="text" class="input" placeholder="Search Audius tracks..." style="display:none">
+        <div id="url-input-area" class="url-input-area" style="display:none">
+          <div class="url-input-row">
+            <input id="audius-url-input" type="text" class="input" placeholder="Paste an Audius track URL...">
+            <button id="audius-url-add" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Add</button>
+          </div>
+          <div id="url-status" class="url-status"></div>
+        </div>
         <div id="search-results" class="search-results"></div>
       </div>
     </div>
 
     <!-- Chat User Context Menu -->
     <div id="chat-user-menu" class="chat-user-menu hidden">
-      <button class="chat-user-menu-item" data-action="profile">View on Audius</button>
-      <button class="chat-user-menu-item chat-user-menu-danger" data-action="mute">Mute User</button>
-      <button class="chat-user-menu-item chat-user-menu-danger" data-action="kick">Kick from Room</button>
+      <button class="chat-user-menu-item" data-action="profile"><i class="fa-solid fa-user"></i> View on Audius</button>
+      <button class="chat-user-menu-item chat-user-menu-danger" data-action="mute"><i class="fa-solid fa-volume-xmark"></i> Mute User</button>
+      <button class="chat-user-menu-item chat-user-menu-danger" data-action="kick"><i class="fa-solid fa-ban"></i> Kick from Room</button>
     </div>
 
     <!-- Mobile Tab Bar -->
     <nav class="mobile-tabs">
-      <button class="mobile-tab active" data-tab="player">&#9835; Player</button>
-      <button class="mobile-tab" data-tab="chat">&#128172; Chat</button>
-      <button class="mobile-tab" data-tab="queue">&#9776; Queue</button>
-      <button class="mobile-tab" data-tab="requests">&#9996; Requests</button>
+      <button class="mobile-tab active" data-tab="player"><i class="fa-solid fa-music"></i> Player</button>
+      <button class="mobile-tab" data-tab="chat"><i class="fa-solid fa-comments"></i> Chat</button>
+      <button class="mobile-tab" data-tab="queue"><i class="fa-solid fa-list"></i> Queue</button>
+      <button class="mobile-tab" data-tab="requests"><i class="fa-solid fa-hand"></i> Requests</button>
     </nav>
   </main>
 

@@ -63,6 +63,44 @@ button { cursor: pointer; font-family: inherit; }
 
 .hidden { display: none !important; }
 
+/* ─── FONT AWESOME ICON TUNING ──────────────────────────── */
+.btn-icon i,
+.btn-toolbar i,
+.panel-header-icon,
+.mobile-tab i,
+.btn-collapse i,
+.btn-expand i,
+.accordion-arrow i,
+.chat-user-menu-item i {
+  font-size: inherit;
+  line-height: 1;
+  vertical-align: middle;
+}
+.panel-header-icon {
+  color: var(--accent);
+  margin-right: 2px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+.accordion-arrow i {
+  font-size: 8px;
+  transition: transform 0.2s ease;
+}
+.accordion-header.collapsed .accordion-arrow i {
+  transform: rotate(-90deg);
+}
+.chat-user-menu-item i {
+  margin-right: 8px;
+  width: 16px;
+  text-align: center;
+  opacity: 0.7;
+}
+.mobile-tab i {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 2px;
+}
+
 /* ─── BUTTONS ────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
@@ -587,9 +625,8 @@ button { cursor: pointer; font-family: inherit; }
   z-index: 5;
 }
 .btn-waveform {
-  font-size: 14px !important;
+  font-size: 11px !important;
   padding: 2px 6px !important;
-  font-family: var(--font-mono);
 }
 .waveform-zoom-label {
   font-family: var(--font-mono);
@@ -785,6 +822,7 @@ button { cursor: pointer; font-family: inherit; }
   letter-spacing: 0.5px;
   font-family: var(--font-mono);
 }
+.search-tab i { margin-right: 4px; font-size: 10px; }
 .search-tab:hover { color: var(--text); }
 .search-tab.active {
   color: var(--accent);
@@ -1058,22 +1096,26 @@ button { cursor: pointer; font-family: inherit; }
   position: absolute;
   bottom: -2px;
   right: -2px;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--accent);
   border: 2px solid var(--bg-panel);
   box-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
-  font-size: 7px;
-  line-height: 8px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.listener-host-dot i {
+  font-size: 6px;
+  color: var(--bg);
 }
 
-/* Hover popup card */
+/* Hover popup card — must be above body::after scan lines (z-index 9999) */
 .listener-popup {
   display: none;
   position: fixed;
-  z-index: 9000;
+  z-index: 10000;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1323,6 +1365,66 @@ button { cursor: pointer; font-family: inherit; }
   overflow-y: auto;
   padding: 8px 18px 18px;
   min-height: 0;
+}
+
+/* URL input area */
+.url-input-area {
+  padding: 12px 18px;
+}
+.url-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.url-input-row .input {
+  flex: 1;
+  margin: 0;
+  width: auto;
+}
+.url-input-row .btn {
+  flex-shrink: 0;
+  padding: 8px 14px;
+}
+.url-status {
+  margin-top: 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+.url-status.error { color: var(--danger); }
+.url-status.success { color: var(--success); }
+
+/* Preview indicator on track items */
+.track-item.previewing {
+  background: var(--accent-dim);
+  border-left: 3px solid var(--accent);
+}
+.btn-preview.active {
+  color: var(--accent) !important;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+}
+
+/* Search pagination */
+.search-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+.search-pagination .btn-icon {
+  font-size: 14px;
+}
+.search-pagination .btn-icon:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.search-page-info {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
 }
 
 /* ─── CHAT USER CONTEXT MENU ────────────────────────────── */

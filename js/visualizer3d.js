@@ -45,9 +45,6 @@ export async function initVisualizer3D(containerEl) {
     return false;
   }
 
-  // Ensure container is positioned for absolute children
-  container.style.position = 'relative';
-
   initThreeJS();
   initCircularOverlay();
   clock = new THREE.Clock();

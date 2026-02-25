@@ -4,6 +4,7 @@
   "description": "SyncWave — Audius Social Listening Room. Listen to music together in perfect sync.",
   "private": true,
   "scripts": {
-    "dev": "npx serve ."
+    "build": "node build.js",
+    "dev": "node build.js && npx serve ."
   }
 }

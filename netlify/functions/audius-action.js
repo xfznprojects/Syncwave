@@ -60,45 +60,76 @@ exports.handler = async (event) => {
   const apiPath = actionDef.path({ userId, trackId, targetUserId });
   const url = `${AUDIUS_API_BASE}${apiPath}`;
 
-  // Auth: Bearer token (preferred) or HTTP Basic Auth with API key + secret
-  try {
-    const fetchHeaders = {};
-    if (bearerToken) {
-      fetchHeaders['Authorization'] = `Bearer ${bearerToken}`;
-    } else {
-      // Audius API uses HTTP Basic Auth: base64(apiKey:apiSecret)
-      const basicCredentials = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
-      fetchHeaders['Authorization'] = `Basic ${basicCredentials}`;
-    }
-
-    const res = await fetch(url, {
-      method: actionDef.method,
-      headers: fetchHeaders,
+  // Try all auth methods: Basic Auth first, then Bearer, then x-api-secret header
+  const authMethods = [];
+  if (apiSecret) {
+    authMethods.push({
+      name: 'basic',
+      headers: {
+        'x-api-key': apiKey,
+        'Authorization': `Basic ${Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')}`,
+      },
     });
+  }
+  if (bearerToken) {
+    authMethods.push({
+      name: 'bearer',
+      headers: {
+        'x-api-key': apiKey,
+        'Authorization': `Bearer ${bearerToken}`,
+      },
+    });
+  }
+  if (apiSecret) {
+    authMethods.push({
+      name: 'x-header',
+      headers: {
+        'x-api-key': apiKey,
+        'x-api-secret': apiSecret,
+      },
+    });
+  }
 
-    const responseBody = await res.text();
+  let lastError = null;
+  let triedMethods = [];
 
-    if (!res.ok) {
-      return {
-        statusCode: res.status,
-        body: JSON.stringify({
-          error: `Audius API error: ${res.status}`,
-          detail: responseBody,
-          debug: {
-            authMethod: bearerToken ? 'bearer' : 'secret',
-            hasApiKey: !!apiKey,
-            hasSecret: !!apiSecret,
-            hasBearer: !!bearerToken,
-            url,
-          },
-        }),
-      };
+  try {
+    for (const method of authMethods) {
+      const res = await fetch(url, {
+        method: actionDef.method,
+        headers: method.headers,
+      });
+
+      const responseBody = await res.text();
+
+      if (res.ok) {
+        return {
+          statusCode: 200,
+          headers: { 'Content-Type': 'application/json' },
+          body: responseBody,
+        };
+      }
+
+      triedMethods.push(method.name);
+      lastError = { status: res.status, body: responseBody };
+
+      // Only retry on 401/403 (auth failure) — other errors are not auth-related
+      if (res.status !== 401 && res.status !== 403) {
+        return {
+          statusCode: res.status,
+          body: JSON.stringify({ error: `Audius API error: ${res.status}`, detail: responseBody }),
+        };
+      }
     }
 
+    // All auth methods failed
     return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: responseBody,
+      statusCode: lastError?.status || 403,
+      body: JSON.stringify({
+        error: `Audius API error: all auth methods failed`,
+        detail: lastError?.body,
+        debug: { triedMethods, hasApiKey: !!apiKey, hasSecret: !!apiSecret, hasBearer: !!bearerToken, url },
+      }),
     };
   } catch (e) {
     return {

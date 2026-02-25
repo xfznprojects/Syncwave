@@ -1,6 +1,6 @@
 import CONFIG from './config.js';
 import {
-  searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl, getPlaylistTracks,
+  searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, setImageWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl, getPlaylistTracks,
   favoriteTrack, unfavoriteTrack, repostTrack, unrepostTrack, followUser, unfollowUser,
 } from './audius.js';
 import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout, getToken } from './auth.js';
@@ -221,11 +221,11 @@ function renderAuthUI() {
 
   if (user) {
     authBtn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Logout';
-    authBtn.onclick = () => { logout(); likedTracks.clear(); repostedTracks.clear(); followedUsers.clear(); renderAuthUI(); };
+    authBtn.onclick = () => { logout(); window.location.reload(); };
     authName.textContent = user.name;
     authName.classList.remove('hidden');
     if (user.profilePicture?.['150x150']) {
-      authAvatar.src = user.profilePicture['150x150'];
+      setImageWithFallback(authAvatar, user.profilePicture['150x150']);
       authAvatar.classList.remove('hidden');
     }
     // Update create room button to reflect user already has a room
@@ -237,7 +237,8 @@ function renderAuthUI() {
     authBtn.onclick = async () => {
       try {
         await loginWithAudius();
-        renderAuthUI();
+        // Reload the page so all features initialize with the logged-in user
+        window.location.reload();
       } catch (e) {
         if (e.message !== 'Login cancelled') {
           showToast('Login failed: ' + e.message);
@@ -2394,7 +2395,7 @@ function requireLogin(action) {
   setTimeout(async () => {
     try {
       await loginWithAudius();
-      renderAuthUI();
+      window.location.reload();
     } catch (e) {
       if (e.message !== 'Login cancelled') {
         showToast('Login failed: ' + e.message);

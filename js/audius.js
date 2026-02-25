@@ -54,6 +54,24 @@ const FALLBACK_NODES = [
   'https://audius-content-1.figment.io',
 ];
 
+// Sets any <img> src with content-node mirror fallback on error.
+export function setImageWithFallback(imgEl, url) {
+  if (!url) { imgEl.src = ''; return; }
+  let mirrorIndex = 0;
+  imgEl.src = url;
+  imgEl.onerror = () => {
+    try {
+      const parsed = new URL(url);
+      while (mirrorIndex < FALLBACK_NODES.length) {
+        const mirrorBase = FALLBACK_NODES[mirrorIndex++];
+        if (url.startsWith(mirrorBase)) continue;
+        imgEl.src = mirrorBase + parsed.pathname;
+        return;
+      }
+    } catch { /* invalid URL */ }
+  };
+}
+
 // Sets an <img> src with mirror fallback on error.
 export function setArtworkWithFallback(imgEl, track, size = '480x480') {
   if (!track?.artwork) {

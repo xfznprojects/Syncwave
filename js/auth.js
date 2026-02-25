@@ -48,6 +48,10 @@ export function loginWithAudius() {
       if (event.origin !== 'https://audius.co') return;
 
       window.removeEventListener('message', onMessage);
+      clearInterval(checkClosed);
+
+      // Close the popup now that we have the token
+      try { popup.close(); } catch { /* cross-origin or already closed */ }
 
       const { token, error } = event.data || {};
       if (error) {

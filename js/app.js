@@ -1052,7 +1052,22 @@ function renderNowPlaying(track) {
       setArtworkWithFallback(artwork, track, '480x480');
       artwork.classList.remove('hidden');
     }
-    if (title) title.textContent = track.title || 'Unknown Track';
+    if (title) {
+      const trackName = track.title || 'Unknown Track';
+      const handle = track.user?.handle;
+      const slug = track.permalink || (handle ? `/${handle}/${track.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : '');
+      if (slug) {
+        const link = document.createElement('a');
+        link.href = `https://audius.co${slug}`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = trackName;
+        title.textContent = '';
+        title.appendChild(link);
+      } else {
+        title.textContent = trackName;
+      }
+    }
     if (artist) artist.textContent = track.user?.name || track.user?.handle || 'Unknown Artist';
   } else {
     if (artwork) { artwork.src = ''; artwork.classList.add('hidden'); }

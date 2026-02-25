@@ -120,7 +120,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   onRoomEvent('onPresenceChange', (users) => {
     renderListeners(users);
-    // Update DB user count when listeners join/leave (host only)
+    // Update DB user count for ALL users (not just host) so 24/7 rooms show accurate counts
+    const presenceRoomId = getRoomId();
+    if (presenceRoomId) dbUpdateRoomUserCount(presenceRoomId, users.length);
+    // Host also persists full room state
     persistRoomToDB();
   });
   onRoomEvent('onKick', (data) => {
@@ -638,8 +641,14 @@ async function enterRoom(roomId) {
 function exitRoom() {
   isExitingRoom = true;
 
-  // Persist room state immediately BEFORE clearing host status / queue
+  // Update listener count for ALL users before leaving (so 24/7 rooms decrement correctly)
   const roomId = getRoomId();
+  if (roomId) {
+    const users = getUsers();
+    dbUpdateRoomUserCount(roomId, Math.max(0, users.length - 1));
+  }
+
+  // Persist full room state for host
   if (roomId && getIsHost()) {
     const user = getCurrentUser();
     const track = getCurrentTrack();

@@ -131,6 +131,9 @@ export async function playTrack(track) {
   // Pause current playback before switching to avoid play() interruption
   if (!audio.paused) audio.pause();
 
+  // Show buffering state immediately (before async load)
+  if (listeners.onBuffering) listeners.onBuffering(true);
+
   currentTrack = track;
   const streamUrl = getStreamUrl(track.id);
   audio.src = streamUrl;
@@ -143,7 +146,10 @@ export async function playTrack(track) {
 
   try {
     await audio.play();
+    // Playback started — clear buffering
+    if (listeners.onBuffering) listeners.onBuffering(false);
   } catch (e) {
+    if (listeners.onBuffering) listeners.onBuffering(false);
     // AbortError = interrupted by another play/pause call (harmless race condition)
     if (e.name !== 'AbortError') {
       console.warn('Autoplay blocked:', e);
@@ -402,6 +408,7 @@ async function applyDeterministicPosition() {
   if (needsTrackSwitch) {
     // Switch to the correct track
     if (!audio.paused) audio.pause();
+    if (listeners.onBuffering) listeners.onBuffering(true);
     currentIndex = pos.trackIndex;
     currentTrack = queue[pos.trackIndex];
     audio.src = getStreamUrl(currentTrack.id);
@@ -414,6 +421,7 @@ async function applyDeterministicPosition() {
     const seekPos = pos.position;
     try {
       await audio.play();
+      if (listeners.onBuffering) listeners.onBuffering(false);
       // Seek after playback starts
       if (seekPos > 0) {
         if (audio.readyState >= 2 && audio.duration && seekPos < audio.duration) {
@@ -425,6 +433,7 @@ async function applyDeterministicPosition() {
         }
       }
     } catch (e) {
+      if (listeners.onBuffering) listeners.onBuffering(false);
       if (e.name !== 'AbortError') console.warn('Deterministic sync autoplay blocked:', e);
     }
   } else if (!audio.paused) {
@@ -500,6 +509,7 @@ export async function handleSync(data) {
     currentTrack = data.track;
     if (!audio) initPlayer();
     resumeAudioContext();
+    if (listeners.onBuffering) listeners.onBuffering(true);
     audio.src = getStreamUrl(data.track.id);
     audio.load();
     if (listeners.onTrackChange) listeners.onTrackChange(currentTrack);

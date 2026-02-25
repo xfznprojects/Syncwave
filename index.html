@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SyncWave — Listen Together</title>
   <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -82,41 +83,20 @@
         </div>
       </div>
 
-      <!-- CENTER: Player + Visualizer + Search -->
-      <div class="room-panel panel-player tab-panel" data-panel="player">
-        <!-- Visualizer -->
+      <!-- CENTER: Visualizer + Waveform + Search -->
+      <div class="room-panel panel-center tab-panel" data-panel="player">
+        <!-- Spectrum Visualizer -->
         <div class="visualizer-wrap">
           <canvas id="visualizer-canvas"></canvas>
         </div>
 
-        <!-- Now Playing -->
-        <div class="now-playing">
-          <img id="np-artwork" class="np-artwork" alt="artwork">
-          <div class="np-info">
-            <div id="np-title" class="np-title">No track playing</div>
-            <div id="np-artist" class="np-artist"></div>
-          </div>
-        </div>
-
-        <!-- Progress Bar -->
-        <div class="progress-area">
-          <span id="progress-time" class="progress-time">0:00</span>
-          <div id="progress-bar" class="progress-bar">
-            <div id="progress-fill" class="progress-fill"></div>
-          </div>
-          <span id="progress-duration" class="progress-time">0:00</span>
-        </div>
-
-        <!-- Controls -->
-        <div class="player-controls">
-          <button id="btn-shuffle" class="btn-icon" title="Shuffle">&#128256;</button>
-          <button id="btn-prev" class="btn-icon" title="Previous">&#9198;</button>
-          <button id="btn-playpause" class="btn-icon btn-playpause" title="Play/Pause">&#9654;</button>
-          <button id="btn-next" class="btn-icon" title="Next">&#9197;</button>
-          <button id="btn-viz-mode" class="btn-icon" title="Change visualizer">&#127912;</button>
-          <div class="volume-control">
-            <button id="btn-mute" class="btn-icon" title="Mute">&#128264;</button>
-            <input id="volume-slider" type="range" min="0" max="100" value="80" class="volume-slider">
+        <!-- Stereo Waveform -->
+        <div class="waveform-wrap">
+          <canvas id="waveform-canvas"></canvas>
+          <div class="waveform-controls">
+            <button id="waveform-zoom-in" class="btn-icon btn-waveform" title="Zoom in">+</button>
+            <span id="waveform-zoom-level" class="waveform-zoom-label">1.0x</span>
+            <button id="waveform-zoom-out" class="btn-icon btn-waveform" title="Zoom out">&minus;</button>
           </div>
         </div>
 
@@ -133,18 +113,53 @@
         </div>
       </div>
 
-      <!-- RIGHT: Queue + Listeners + Requests -->
-        <button class="btn-expand btn-expand-right hidden" id="expand-sidebar" title="Expand sidebar">&#10095;</button>
+      <!-- RIGHT: Analysis + Queue + Listeners + Requests -->
+      <button class="btn-expand btn-expand-right hidden" id="expand-sidebar" title="Expand sidebar">&#10095;</button>
       <div class="room-panel panel-sidebar">
+        <!-- Audio Analysis -->
+        <div class="sidebar-section" data-panel="analysis">
+          <div class="panel-header">Analysis <button class="btn-collapse" data-collapse="sidebar" title="Collapse">&#10095;</button></div>
+          <div id="analysis-display" class="analysis-display">
+            <div class="analysis-grid">
+              <div class="analysis-cell">
+                <span class="analysis-label">BPM</span>
+                <span id="analysis-bpm" class="analysis-value">--</span>
+              </div>
+              <div class="analysis-cell">
+                <span class="analysis-label">Key</span>
+                <span id="analysis-key" class="analysis-value">--</span>
+              </div>
+              <div class="analysis-cell">
+                <span class="analysis-label">LUFS</span>
+                <span id="analysis-lufs" class="analysis-value">--</span>
+              </div>
+              <div class="analysis-cell">
+                <span class="analysis-label">DR</span>
+                <span id="analysis-dr" class="analysis-value">--</span>
+              </div>
+            </div>
+            <!-- Mini spectrum bars in analysis panel -->
+            <canvas id="analysis-spectrum" class="analysis-spectrum"></canvas>
+          </div>
+        </div>
+
         <!-- Listeners -->
         <div class="sidebar-section tab-panel" data-panel="listeners">
-          <div class="panel-header">Listeners <button class="btn-collapse" data-collapse="sidebar" title="Collapse">&#10095;</button></div>
+          <div class="panel-header">Listeners</div>
           <div id="listeners-list" class="listeners-list"></div>
         </div>
 
-        <!-- Queue -->
+        <!-- Queue / Playlist -->
         <div class="sidebar-section tab-panel" data-panel="queue">
-          <div class="panel-header">Queue</div>
+          <div class="panel-header">
+            Queue
+            <div class="queue-toolbar">
+              <button id="btn-export-playlist" class="btn-icon btn-toolbar" title="Export playlist">&#128190;</button>
+              <button id="btn-import-playlist" class="btn-icon btn-toolbar" title="Import playlist">&#128194;</button>
+              <button id="btn-clear-queue" class="btn-icon btn-toolbar" title="Clear queue">&#128465;</button>
+              <input type="file" id="import-playlist-input" accept=".json" style="display:none">
+            </div>
+          </div>
           <div id="queue-list" class="queue-list"></div>
         </div>
 
@@ -152,6 +167,39 @@
         <div class="sidebar-section tab-panel" data-panel="requests">
           <div class="panel-header">Requests</div>
           <div id="requests-list" class="requests-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fixed Bottom Player Bar -->
+    <div class="player-bar">
+      <div class="player-bar-left">
+        <img id="np-artwork" class="player-bar-artwork" alt="artwork">
+        <div class="player-bar-info">
+          <div id="np-title" class="np-title">No track playing</div>
+          <div id="np-artist" class="np-artist"></div>
+        </div>
+      </div>
+      <div class="player-bar-center">
+        <div class="player-controls">
+          <button id="btn-shuffle" class="btn-icon" title="Shuffle">&#128256;</button>
+          <button id="btn-prev" class="btn-icon" title="Previous">&#9198;</button>
+          <button id="btn-playpause" class="btn-icon btn-playpause" title="Play/Pause">&#9654;</button>
+          <button id="btn-next" class="btn-icon" title="Next">&#9197;</button>
+          <button id="btn-viz-mode" class="btn-icon" title="Change visualizer">&#127912;</button>
+        </div>
+        <div class="progress-area">
+          <span id="progress-time" class="progress-time">0:00</span>
+          <div id="progress-bar" class="progress-bar">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+          <span id="progress-duration" class="progress-time">0:00</span>
+        </div>
+      </div>
+      <div class="player-bar-right">
+        <div class="volume-control">
+          <button id="btn-mute" class="btn-icon" title="Mute">&#128264;</button>
+          <input id="volume-slider" type="range" min="0" max="100" value="80" class="volume-slider">
         </div>
       </div>
     </div>

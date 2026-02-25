@@ -80,10 +80,10 @@ function drawBars(analyser, dataArray, bufferLength, w, h) {
     const value = dataArray[i] / 255;
     const barHeight = value * h * 0.85;
 
-    const hue = (i / barCount) * 60 + 240; // purple to blue gradient
+    const hue = 180 + (i / barCount) * 140; // cyan → magenta gradient
     const lightness = 40 + value * 30;
 
-    ctx.fillStyle = `hsla(${hue}, 80%, ${lightness}%, 0.9)`;
+    ctx.fillStyle = `hsla(${hue}, 90%, ${lightness}%, 0.9)`;
     ctx.fillRect(
       i * barWidth + gap / 2,
       h - barHeight,
@@ -92,7 +92,7 @@ function drawBars(analyser, dataArray, bufferLength, w, h) {
     );
 
     // Reflection
-    ctx.fillStyle = `hsla(${hue}, 80%, ${lightness}%, 0.15)`;
+    ctx.fillStyle = `hsla(${hue}, 90%, ${lightness}%, 0.15)`;
     ctx.fillRect(
       i * barWidth + gap / 2,
       h,
@@ -106,7 +106,7 @@ function drawWave(analyser, dataArray, bufferLength, w, h) {
   analyser.getByteTimeDomainData(dataArray);
 
   ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(147, 130, 255, 0.8)';
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.8)';
   ctx.beginPath();
 
   const sliceWidth = w / bufferLength;
@@ -127,7 +127,7 @@ function drawWave(analyser, dataArray, bufferLength, w, h) {
 
   // Glow effect
   ctx.lineWidth = 6;
-  ctx.strokeStyle = 'rgba(147, 130, 255, 0.15)';
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.15)';
   ctx.beginPath();
   x = 0;
   for (let i = 0; i < bufferLength; i++) {
@@ -159,9 +159,9 @@ function drawCircular(analyser, dataArray, bufferLength, w, h) {
     const x2 = cx + Math.cos(angle) * (radius + barLength);
     const y2 = cy + Math.sin(angle) * (radius + barLength);
 
-    const hue = (i / barCount) * 60 + 240;
+    const hue = 180 + (i / barCount) * 140; // cyan → magenta
     ctx.lineWidth = 3;
-    ctx.strokeStyle = `hsla(${hue}, 80%, ${50 + value * 30}%, 0.8)`;
+    ctx.strokeStyle = `hsla(${hue}, 90%, ${50 + value * 30}%, 0.8)`;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
@@ -170,8 +170,8 @@ function drawCircular(analyser, dataArray, bufferLength, w, h) {
 
   // Inner circle glow
   const gradient = ctx.createRadialGradient(cx, cy, radius * 0.3, cx, cy, radius);
-  gradient.addColorStop(0, 'rgba(147, 130, 255, 0.1)');
-  gradient.addColorStop(1, 'rgba(147, 130, 255, 0)');
+  gradient.addColorStop(0, 'rgba(0, 240, 255, 0.12)');
+  gradient.addColorStop(1, 'rgba(0, 240, 255, 0)');
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);

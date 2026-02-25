@@ -5,6 +5,9 @@ import { broadcast, getIsHost } from './room.js';
 let audio = null;
 let audioContext = null;
 let analyserNode = null;
+let analyserL = null;
+let analyserR = null;
+let splitterNode = null;
 let sourceNode = null;
 let queue = [];
 let currentIndex = -1;
@@ -52,17 +55,36 @@ export function initPlayer() {
   return audio;
 }
 
-// Web Audio API setup for visualizer
+// Web Audio API setup for visualizer + analysis
 export function getAnalyser() {
   if (analyserNode) return analyserNode;
   if (!audio) return null;
 
   try {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Main mono analyser (visualizer + analysis engine)
     analyserNode = audioContext.createAnalyser();
-    analyserNode.fftSize = 256;
+    analyserNode.fftSize = 2048;
+    analyserNode.smoothingTimeConstant = 0.8;
+
+    // Stereo channel splitter + per-channel analysers
+    splitterNode = audioContext.createChannelSplitter(2);
+    analyserL = audioContext.createAnalyser();
+    analyserL.fftSize = 2048;
+    analyserL.smoothingTimeConstant = 0.8;
+    analyserR = audioContext.createAnalyser();
+    analyserR.fftSize = 2048;
+    analyserR.smoothingTimeConstant = 0.8;
+
+    splitterNode.connect(analyserL, 0);
+    splitterNode.connect(analyserR, 1);
+
+    // Source -> mono analyser -> destination
+    // Source -> splitter -> L/R analysers (read-only taps, not to destination)
     sourceNode = audioContext.createMediaElementSource(audio);
     sourceNode.connect(analyserNode);
+    sourceNode.connect(splitterNode);
     analyserNode.connect(audioContext.destination);
   } catch (e) {
     console.warn('Web Audio API not available:', e);
@@ -71,6 +93,12 @@ export function getAnalyser() {
 
   return analyserNode;
 }
+
+export function getAnalyserLeft() { return analyserL; }
+export function getAnalyserRight() { return analyserR; }
+export function getAudioContext() { return audioContext; }
+export function getAudioElement() { return audio; }
+export function getSampleRate() { return audioContext?.sampleRate || 44100; }
 
 export function resumeAudioContext() {
   if (audioContext && audioContext.state === 'suspended') {
@@ -202,11 +230,40 @@ export function clearQueue() {
   if (listeners.onQueueChange) listeners.onQueueChange(queue, currentIndex);
 }
 
+export function moveInQueue(fromIndex, toIndex) {
+  if (fromIndex < 0 || fromIndex >= queue.length || toIndex < 0 || toIndex >= queue.length) return;
+  const [item] = queue.splice(fromIndex, 1);
+  queue.splice(toIndex, 0, item);
+
+  // Adjust currentIndex to follow the currently playing track
+  if (currentIndex === fromIndex) {
+    currentIndex = toIndex;
+  } else if (fromIndex < currentIndex && toIndex >= currentIndex) {
+    currentIndex--;
+  } else if (fromIndex > currentIndex && toIndex <= currentIndex) {
+    currentIndex++;
+  }
+
+  if (listeners.onQueueChange) listeners.onQueueChange(queue, currentIndex);
+  if (getIsHost()) broadcastSync();
+}
+
 export function playFromQueue(index) {
   if (index >= 0 && index < queue.length) {
     currentIndex = index;
     playTrack(queue[index]);
   }
+}
+
+// Load a full queue from imported data
+export function loadQueueFromData(tracks, startPlaying = false) {
+  queue = tracks;
+  currentIndex = tracks.length > 0 ? 0 : -1;
+  if (listeners.onQueueChange) listeners.onQueueChange(queue, currentIndex);
+  if (startPlaying && queue.length > 0) {
+    playTrack(queue[0]);
+  }
+  if (getIsHost()) broadcastSync();
 }
 
 export function playNext() {
@@ -358,6 +415,9 @@ export function destroy() {
     audioContext.close();
     audioContext = null;
     analyserNode = null;
+    analyserL = null;
+    analyserR = null;
+    splitterNode = null;
     sourceNode = null;
   }
   queue = [];

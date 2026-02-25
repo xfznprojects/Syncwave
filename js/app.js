@@ -7,22 +7,29 @@ import {
 } from './room.js';
 import {
   initPlayer, playTrack, play, pause, togglePlay, seek,
-  getCurrentTrack, getPlayState, getQueue, addToQueue, removeFromQueue,
+  getCurrentTrack, getPlayState, getQueue, getCurrentIndex, addToQueue, removeFromQueue, clearQueue,
   playNext, playPrevious, playFromQueue, toggleShuffle, isShuffled,
   onPlayerEvent, handleSync, handleTrackChange, getAnalyser, resumeAudioContext,
   stopSyncLoop, destroy as destroyPlayer, setVolume, getVolume,
+  moveInQueue, loadQueueFromData,
 } from './player.js';
 import { initVisualizer, startVisualizer, stopVisualizer, cycleMode, getMode, destroy as destroyVis } from './visualizer.js';
 import {
   initChat, sendMessage, sendGif, handleIncomingMessage, clearChat,
   searchGifs, getTrendingGifs, renderGifPicker, setupGifSearch,
 } from './chat.js';
+import { startAnalysis, stopAnalysis, onAnalysisUpdate, destroy as destroyAnalysis } from './analysis.js';
+import { initWaveform, startWaveform, stopWaveform, zoomIn, zoomOut, getZoomLevel, destroy as destroyWaveform } from './waveform.js';
+import { savePlaylist as dbSavePlaylist, loadPlaylist as dbLoadPlaylist, saveChatMessage as dbSaveChatMessage, loadChatHistory as dbLoadChatHistory } from './database.js';
 
 // Song requests
 let songRequests = [];
 
 // Lobby announce interval
 let announceInterval = null;
+
+// Current room ID for chat persistence
+let currentRoomIdForChat = null;
 
 // ─── ROUTING ────────────────────────────────────────────────
 
@@ -53,7 +60,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Room events
   onRoomEvent('onSync', handleSync);
-  onRoomEvent('onChat', handleIncomingMessage);
+  onRoomEvent('onChat', (msg) => {
+    handleIncomingMessage(msg);
+    if (currentRoomIdForChat) dbSaveChatMessage(currentRoomIdForChat, msg);
+  });
   onRoomEvent('onTrackChange', handleTrackChange);
   onRoomEvent('onSongRequest', (data) => {
     songRequests.push(data);
@@ -76,17 +86,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   onPlayerEvent('onTrackChange', (track) => {
     renderNowPlaying(track);
     startVisualizer();
+    startWaveform();
+    startAnalysis();
+    // Re-render queue to update highlight on active track
+    renderQueue(getQueue(), getCurrentIndex());
   });
   onPlayerEvent('onPlayStateChange', (playing) => {
     updatePlayButton(playing);
-    if (playing) startVisualizer();
-    else stopVisualizer();
+    if (playing) { startVisualizer(); startWaveform(); startAnalysis(); }
+    else { stopVisualizer(); stopWaveform(); stopAnalysis(); }
   });
   onPlayerEvent('onTimeUpdate', (state) => {
     updateProgress(state);
   });
   onPlayerEvent('onQueueChange', (queue, idx) => {
     renderQueue(queue, idx);
+    // Persist playlist
+    const user = getCurrentUser();
+    if (user) dbSavePlaylist(user.userId, queue);
+    else savePlaylistToStorage(); // fallback for guests
   });
 
   // Route handling
@@ -219,6 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ─── ROOM VIEW ──────────────────────────────────────────────
 
 async function enterRoom(roomId) {
+  currentRoomIdForChat = roomId;
   const user = getCurrentUser();
   const isCreator = user && user.handle === roomId;
 
@@ -228,9 +247,38 @@ async function enterRoom(roomId) {
   initChat(chatMessages, gifPicker);
   clearChat();
 
+  // Load prior chat history for this room (from Supabase with localStorage fallback)
+  try {
+    const chatHistory = await dbLoadChatHistory(roomId);
+    if (chatHistory.length > 0) {
+      chatHistory.forEach(msg => handleIncomingMessage(msg));
+    }
+  } catch {
+    const chatHistory = getChatHistory(roomId);
+    if (chatHistory.length > 0) {
+      chatHistory.forEach(msg => handleIncomingMessage(msg));
+    }
+  }
+
   // Init visualizer
   const canvas = document.getElementById('visualizer-canvas');
   if (canvas) initVisualizer(canvas);
+
+  // Init stereo waveform
+  const waveformCanvas = document.getElementById('waveform-canvas');
+  if (waveformCanvas) initWaveform(waveformCanvas);
+
+  // Init analysis display
+  onAnalysisUpdate((results) => {
+    const bpmEl = document.getElementById('analysis-bpm');
+    const keyEl = document.getElementById('analysis-key');
+    const lufsEl = document.getElementById('analysis-lufs');
+    const drEl = document.getElementById('analysis-dr');
+    if (bpmEl) bpmEl.textContent = results.bpm ?? '--';
+    if (keyEl) keyEl.textContent = results.key ?? '--';
+    if (lufsEl) lufsEl.textContent = results.lufs != null ? `${results.lufs}` : '--';
+    if (drEl) drEl.textContent = results.dr != null ? `${results.dr} dB` : '--';
+  });
 
   // Join/create room
   try {
@@ -287,6 +335,19 @@ async function enterRoom(roomId) {
   // Start lobby announcements if host
   if (getIsHost()) {
     startAnnouncing(roomId);
+
+    // Restore saved playlist if host and queue is empty
+    if (getQueue().length === 0) {
+      let saved = null;
+      if (user) {
+        try { saved = await dbLoadPlaylist(user.userId); } catch { /* fallback below */ }
+      }
+      if (!saved) saved = loadPlaylistFromStorage();
+      if (saved && saved.length > 0) {
+        loadQueueFromData(saved, false);
+        showToast(`Restored ${saved.length} tracks from last session`);
+      }
+    }
   }
 
   // Reset song requests
@@ -295,10 +356,15 @@ async function enterRoom(roomId) {
 }
 
 function exitRoom() {
+  currentRoomIdForChat = null;
   stopAnnouncing();
   leaveRoom();
   stopSyncLoop();
   stopVisualizer();
+  stopWaveform();
+  destroyWaveform();
+  stopAnalysis();
+  destroyAnalysis();
   clearChat();
   songRequests = [];
 }
@@ -329,9 +395,13 @@ function setupSearch() {
       // Show/hide search input
       if (input) input.style.display = activeSearchTab === 'search' ? '' : 'none';
 
+      // Clear previous results immediately to avoid stale content showing
+      const container = document.getElementById('search-results');
+      if (container) container.innerHTML = '<div class="empty-state">Loading...</div>';
+
       // Load content for tab
       if (activeSearchTab === 'trending') loadTrending();
-      else if (activeSearchTab === 'search') { input.focus(); if (input.value.trim()) triggerSearch(input.value.trim()); }
+      else if (activeSearchTab === 'search') { input.focus(); if (input.value.trim()) triggerSearch(input.value.trim()); else if (container) container.innerHTML = '<div class="empty-state">Type to search...</div>'; }
       else if (activeSearchTab === 'mytracks') loadMyTracks();
       else if (activeSearchTab === 'favorites') loadFavorites();
     });
@@ -489,8 +559,8 @@ function setupPlayerControls() {
   const playPauseBtn = document.getElementById('btn-playpause');
   const prevBtn = document.getElementById('btn-prev');
   const nextBtn = document.getElementById('btn-next');
-  const shuffleBtn = document.getElementById('btn-shuffle');
   const vizBtn = document.getElementById('btn-viz-mode');
+  const shuffleBtn = document.getElementById('btn-shuffle');
   const progressBar = document.getElementById('progress-bar');
   const volumeSlider = document.getElementById('volume-slider');
   const muteBtn = document.getElementById('btn-mute');
@@ -518,6 +588,26 @@ function setupPlayerControls() {
       showToast(`Visualizer: ${mode}`);
     });
   }
+
+  // Waveform zoom controls
+  const zoomInBtn = document.getElementById('waveform-zoom-in');
+  const zoomOutBtn = document.getElementById('waveform-zoom-out');
+  const zoomLabel = document.getElementById('waveform-zoom-level');
+  if (zoomInBtn) {
+    zoomInBtn.addEventListener('click', () => {
+      const level = zoomIn();
+      if (zoomLabel) zoomLabel.textContent = `${level.toFixed(1)}x`;
+    });
+  }
+  if (zoomOutBtn) {
+    zoomOutBtn.addEventListener('click', () => {
+      const level = zoomOut();
+      if (zoomLabel) zoomLabel.textContent = `${level.toFixed(1)}x`;
+    });
+  }
+
+  // Queue toolbar buttons
+  setupQueueToolbar();
 
   if (progressBar) {
     progressBar.addEventListener('click', (e) => {
@@ -595,6 +685,8 @@ function setupCollapsiblePanels() {
 
 // ─── QUEUE ──────────────────────────────────────────────────
 
+let dragSrcIndex = null;
+
 function renderQueue(queue, currentIndex) {
   const container = document.getElementById('queue-list');
   if (!container) return;
@@ -604,21 +696,62 @@ function renderQueue(queue, currentIndex) {
     return;
   }
 
+  const isHostUser = getIsHost();
+
   container.innerHTML = queue.map((track, i) => `
-    <div class="queue-item ${i === currentIndex ? 'queue-active' : ''}" data-index="${i}">
+    <div class="queue-item ${i === currentIndex ? 'queue-active' : ''}" data-index="${i}" ${isHostUser ? 'draggable="true"' : ''}>
+      ${isHostUser ? '<span class="queue-drag-handle" title="Drag to reorder">&#9776;</span>' : ''}
       <span class="queue-number">${i + 1}</span>
       <div class="queue-track-info">
         <span class="queue-track-title">${escapeHtml(track.title)}</span>
         <span class="queue-track-artist">${escapeHtml(track.user?.name || '')}</span>
       </div>
-      ${getIsHost() ? `<button class="btn-icon btn-remove-queue" data-index="${i}" title="Remove">&times;</button>` : ''}
+      ${isHostUser ? `<button class="btn-icon btn-remove-queue" data-index="${i}" title="Remove">&times;</button>` : ''}
     </div>
   `).join('');
 
   container.querySelectorAll('.queue-item').forEach(item => {
-    item.addEventListener('click', () => {
-      if (getIsHost()) playFromQueue(parseInt(item.dataset.index));
+    item.addEventListener('click', (e) => {
+      // Don't trigger play when clicking drag handle or remove button
+      if (e.target.classList.contains('queue-drag-handle') || e.target.classList.contains('btn-remove-queue')) return;
+      if (isHostUser) playFromQueue(parseInt(item.dataset.index));
     });
+
+    // Drag-and-drop for host
+    if (isHostUser) {
+      item.addEventListener('dragstart', (e) => {
+        dragSrcIndex = parseInt(item.dataset.index);
+        item.classList.add('queue-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragSrcIndex);
+      });
+
+      item.addEventListener('dragend', () => {
+        item.classList.remove('queue-dragging');
+        container.querySelectorAll('.queue-item').forEach(el => el.classList.remove('queue-drag-over'));
+      });
+
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        container.querySelectorAll('.queue-item').forEach(el => el.classList.remove('queue-drag-over'));
+        item.classList.add('queue-drag-over');
+      });
+
+      item.addEventListener('dragleave', () => {
+        item.classList.remove('queue-drag-over');
+      });
+
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        item.classList.remove('queue-drag-over');
+        const toIndex = parseInt(item.dataset.index);
+        if (dragSrcIndex !== null && dragSrcIndex !== toIndex) {
+          moveInQueue(dragSrcIndex, toIndex);
+        }
+        dragSrcIndex = null;
+      });
+    }
   });
 
   container.querySelectorAll('.btn-remove-queue').forEach(btn => {
@@ -627,6 +760,108 @@ function renderQueue(queue, currentIndex) {
       removeFromQueue(parseInt(btn.dataset.index));
     });
   });
+
+  // Auto-scroll active item into view
+  const activeItem = container.querySelector('.queue-active');
+  if (activeItem) activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// ─── QUEUE TOOLBAR ──────────────────────────────────────────
+
+function setupQueueToolbar() {
+  const exportBtn = document.getElementById('btn-export-playlist');
+  const importBtn = document.getElementById('btn-import-playlist');
+  const importInput = document.getElementById('import-playlist-input');
+  const clearBtn = document.getElementById('btn-clear-queue');
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const queue = getQueue();
+      if (queue.length === 0) { showToast('Queue is empty'); return; }
+      const data = JSON.stringify({ name: 'SyncWave Playlist', tracks: queue, exportedAt: Date.now() }, null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'syncwave-playlist.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Playlist exported');
+    });
+  }
+
+  if (importBtn && importInput) {
+    importBtn.addEventListener('click', () => importInput.click());
+    importInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          const tracks = data.tracks || data;
+          if (Array.isArray(tracks) && tracks.length > 0) {
+            loadQueueFromData(tracks, true);
+            showToast(`Imported ${tracks.length} tracks`);
+          } else {
+            showToast('No tracks found in file');
+          }
+        } catch {
+          showToast('Invalid playlist file');
+        }
+      };
+      reader.readAsText(file);
+      importInput.value = ''; // Reset so same file can be re-imported
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (getQueue().length === 0) { showToast('Queue already empty'); return; }
+      clearQueue();
+      showToast('Queue cleared');
+    });
+  }
+}
+
+// ─── PLAYLIST PERSISTENCE (localStorage) ────────────────────
+
+const PLAYLIST_STORAGE_KEY = 'syncwave_playlist';
+
+function savePlaylistToStorage() {
+  const queue = getQueue();
+  if (queue.length > 0) {
+    localStorage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(queue));
+  } else {
+    localStorage.removeItem(PLAYLIST_STORAGE_KEY);
+  }
+}
+
+function loadPlaylistFromStorage() {
+  try {
+    const data = localStorage.getItem(PLAYLIST_STORAGE_KEY);
+    if (data) return JSON.parse(data);
+  } catch { /* ignore */ }
+  return null;
+}
+
+// ─── CHAT HISTORY PERSISTENCE ───────────────────────────────
+
+const CHAT_HISTORY_KEY = 'syncwave_chat_history';
+const CHAT_HISTORY_LIMIT = 50;
+
+function saveChatMessage(roomId, message) {
+  const key = `${CHAT_HISTORY_KEY}_${roomId}`;
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem(key) || '[]'); } catch { /* ignore */ }
+  history.push(message);
+  if (history.length > CHAT_HISTORY_LIMIT) history = history.slice(-CHAT_HISTORY_LIMIT);
+  localStorage.setItem(key, JSON.stringify(history));
+}
+
+function getChatHistory(roomId) {
+  const key = `${CHAT_HISTORY_KEY}_${roomId}`;
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
 }
 
 // ─── LISTENERS ──────────────────────────────────────────────
@@ -638,16 +873,37 @@ function renderListeners(users) {
 
   if (countEl) countEl.textContent = users.length;
 
-  container.innerHTML = users.map(user => `
-    <div class="listener-item">
-      ${user.avatar
-        ? `<img class="listener-avatar" src="${escapeHtml(user.avatar)}" alt="${escapeHtml(user.handle)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+  container.innerHTML = users.map(user => {
+    const safeAvatar = user.avatar && typeof user.avatar === 'string' && (user.avatar.startsWith('https://') || user.avatar.startsWith('http://'))
+      ? escapeHtml(user.avatar) : '';
+    const handle = escapeHtml(user.handle || 'anonymous');
+    const name = escapeHtml(user.name || user.handle || 'Anonymous');
+    const profileUrl = `https://audius.co/${escapeHtml(user.handle || '')}`;
+    return `
+    <div class="listener-item ${user.isHost ? 'is-host' : ''}">
+      ${safeAvatar
+        ? `<img class="listener-avatar" src="${safeAvatar}" alt="${handle}" loading="lazy">`
         : ''}
-      <div class="listener-avatar-fallback" ${user.avatar ? 'style="display:none"' : ''}>${(user.name || '?')[0].toUpperCase()}</div>
-      <span class="listener-name">${escapeHtml(user.name || user.handle)}</span>
-      ${user.isHost ? '<span class="host-badge">HOST</span>' : ''}
+      <div class="listener-avatar-fallback" ${safeAvatar ? 'style="display:none"' : ''}>${escapeHtml((user.name || '?')[0].toUpperCase())}</div>
+      ${user.isHost ? '<div class="listener-host-dot" title="Host">&#9733;</div>' : ''}
+      <div class="listener-popup">
+        <div class="listener-popup-name">${name}</div>
+        <div class="listener-popup-handle">@${handle}</div>
+        ${user.isHost ? '<div><span class="host-badge">HOST</span></div>' : ''}
+        <a class="listener-popup-link" href="${profileUrl}" target="_blank" rel="noopener noreferrer">View on Audius</a>
+      </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
+
+  // Handle avatar errors via JS instead of inline onerror
+  container.querySelectorAll('.listener-avatar').forEach(img => {
+    img.addEventListener('error', () => {
+      img.style.display = 'none';
+      const fallback = img.nextElementSibling;
+      if (fallback) fallback.style.display = 'flex';
+    });
+  });
 }
 
 // ─── CHAT INPUT ─────────────────────────────────────────────
@@ -657,10 +913,24 @@ function setupChatInput() {
   const sendBtn = document.getElementById('chat-send-btn');
   if (!input) return;
 
+  // Enforce max length on input
+  input.maxLength = 500;
+
   const doSend = () => {
-    const text = input.value.trim();
+    const text = input.value.trim().slice(0, 500);
     if (text) {
+      const user = getCurrentUser();
+      const msg = {
+        userId: user?.userId || 'anon',
+        handle: user?.handle || 'Anonymous',
+        name: user?.name || 'Anonymous',
+        avatar: user?.profilePicture?.['150x150'] || null,
+        text,
+        gifUrl: null,
+        timestamp: Date.now(),
+      };
       sendMessage(text);
+      if (currentRoomIdForChat) dbSaveChatMessage(currentRoomIdForChat, msg);
       input.value = '';
     }
   };

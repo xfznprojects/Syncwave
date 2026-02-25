@@ -120,10 +120,26 @@ CREATE POLICY "Anyone can update rooms" ON rooms
   FOR UPDATE USING (true) WITH CHECK (room_id IS NOT NULL AND length(room_id) > 0);
 
 -- ─── SEED PERMANENT DEMO ROOMS ─────────────────────────────
--- These rooms always appear in the directory. Join and add music via the UI.
+-- These rooms always appear in the directory. Manage playlists via SQL (see below).
 INSERT INTO rooms (room_id, host_name, host_handle, host_user_id, is_permanent, user_count)
 VALUES
-  ('247room1', 'XEFUZION', 'XEFUZION', NULL, true, 0),
-  ('247room2', 'XEFUZION', 'XEFUZION', NULL, true, 0),
-  ('247room3', 'XEFUZION', 'XEFUZION', NULL, true, 0)
+  ('247room1', 'Hip-Hop Lounge', 'SyncWave', NULL, true, 0),
+  ('247room2', 'Electronic Vibes', 'SyncWave', NULL, true, 0),
+  ('247room3', 'Indie Corner', 'SyncWave', NULL, true, 0)
 ON CONFLICT (room_id) DO NOTHING;
+
+-- ─── MANAGE 24/7 ROOM PLAYLISTS ────────────────────────────
+-- To update an existing room's name:
+--   UPDATE rooms SET host_name = 'New Name' WHERE room_id = '247room1';
+--
+-- To add a playlist to a 24/7 room, paste track data as JSON.
+-- You can get track data from the Audius API:
+--   https://api.audius.co/v1/playlists/{PLAYLIST_ID}/tracks
+--
+-- Example: load a playlist into 247room1
+--   UPDATE rooms
+--   SET playlist = '[
+--     {"id":"abc123","title":"Track Name","duration":210,"user":{"name":"Artist","handle":"artist"},"artwork":null},
+--     {"id":"def456","title":"Another Track","duration":185,"user":{"name":"Artist2","handle":"artist2"},"artwork":null}
+--   ]'::jsonb
+--   WHERE room_id = '247room1';

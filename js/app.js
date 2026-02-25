@@ -472,23 +472,11 @@ async function enterRoom(roomId) {
     if (drEl) drEl.textContent = results.dr != null ? `${results.dr} dB` : '--';
   });
 
-  // Determine if this user should be host
-  // 1) Room creator (their own handle)
-  // 2) Permanent rooms: configured host handle gets promotion
-  const isPermanentRoom = roomData?.isPermanent === true;
-  const roomHostHandle = CONFIG.ROOM_HOST_HANDLE;
-  const isDesignatedHost = isPermanentRoom && roomHostHandle && user && user.handle?.toUpperCase() === roomHostHandle.toUpperCase();
-  const shouldBeHost = isCreator || isDesignatedHost;
-
   // Join/create room
   try {
-    if (shouldBeHost) {
+    if (isCreator) {
       await createRoom(user);
-      if (isPermanentRoom && !isCreator) {
-        showToast('Welcome back! You are now hosting this 24/7 room.');
-      } else if (isCreator) {
-        showToast('Room created! Share your handle to invite listeners.');
-      }
+      showToast('Room created! Share your handle to invite listeners.');
     } else {
       const guestUser = user || {
         userId: 'guest-' + Date.now(),
@@ -503,10 +491,15 @@ async function enterRoom(roomId) {
     return;
   }
 
+  // Track whether this is a permanent 24/7 room (no host, auto-play)
+  const isPermanentRoom = roomData?.isPermanent === true;
+
   // Update room title in main header
   const headerTitle = document.getElementById('header-room-title');
   if (headerTitle) {
-    headerTitle.textContent = `${roomId}'s Room`;
+    headerTitle.textContent = isPermanentRoom && roomData?.hostName
+      ? roomData.hostName
+      : `${roomId}'s Room`;
     headerTitle.classList.remove('hidden');
   }
 
@@ -549,13 +542,26 @@ async function enterRoom(roomId) {
   // Setup chat user context menu
   setupChatUserMenu();
 
-  // Start lobby announcements if host
-  if (getIsHost()) {
+  // Permanent 24/7 rooms: no host, load playlist and autoplay immediately
+  if (isPermanentRoom) {
+    if (getQueue().length === 0) {
+      try {
+        const roomPlaylist = await dbLoadRoomPlaylist(roomId);
+        if (roomPlaylist && roomPlaylist.length > 0) {
+          loadQueueFromData(roomPlaylist, false);
+          const restored = await restorePlaybackState(roomData);
+          if (!restored) {
+            playFromQueue(0);
+          }
+        }
+      } catch { /* no saved playlist */ }
+    }
+  } else if (getIsHost()) {
+    // Host: announce and restore playlist
     startAnnouncing(roomId);
 
-    // Restore saved playlist if host and queue is empty
     if (getQueue().length === 0) {
-      // For permanent rooms or rooms with saved playback state, restore from room data first
+      // Try room's saved playlist first
       let restored = false;
       if (roomData?.playlist) {
         const playlist = typeof roomData.playlist === 'string' ? JSON.parse(roomData.playlist) : roomData.playlist;
@@ -579,25 +585,20 @@ async function enterRoom(roomId) {
   } else {
     // Non-host: wait a moment for host sync, then auto-play room playlist if no host responds
     setTimeout(async () => {
-      // If no tracks arrived from host sync, load the room's saved playlist
       if (getQueue().length === 0) {
         try {
           const roomPlaylist = await dbLoadRoomPlaylist(roomId);
           if (roomPlaylist && roomPlaylist.length > 0) {
             loadQueueFromData(roomPlaylist, false);
-            // Try to restore playback position from room data
             const restored = await restorePlaybackState(roomData);
             if (!restored) {
-              // No saved position — just start playing from the beginning
               playFromQueue(0);
               showToast(`Playing ${roomPlaylist.length} tracks from this room`);
             }
           }
-        } catch {
-          // No saved playlist — that's fine
-        }
+        } catch { /* no saved playlist */ }
       }
-    }, 3000); // 3 seconds — enough time for host to respond with sync
+    }, 3000);
   }
 
   // Reset song requests
@@ -611,6 +612,7 @@ function exitRoom() {
   leaveRoom();
   stopSyncLoop();
   pause();
+  clearQueue();
   stopVisualizer();
   destroyVis();
   stopWaveform();

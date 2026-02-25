@@ -95,17 +95,18 @@ button { cursor: pointer; font-family: inherit; }
 .btn-secondary:hover { background: var(--border); border-color: var(--accent); }
 
 .btn-auth {
-  background: linear-gradient(135deg, var(--accent), var(--secondary));
-  color: #000;
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--accent);
   font-size: 13px;
   font-weight: 700;
   padding: 6px 14px;
-  border: none;
+  border: 1px solid rgba(0, 240, 255, 0.35);
   border-radius: 20px;
-  box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+  transition: background 0.2s, box-shadow 0.2s;
 }
 .btn-auth:hover {
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.5), 0 0 20px rgba(255, 0, 170, 0.3);
+  background: rgba(0, 240, 255, 0.2);
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.25);
 }
 
 .btn-icon {
@@ -194,19 +195,26 @@ button { cursor: pointer; font-family: inherit; }
   min-height: calc(100vh - var(--header-h));
 }
 
+/* Room view: fill remaining viewport exactly, no body scroll */
+#room-view {
+  height: calc(100vh - var(--header-h));
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .hero {
   text-align: center;
   padding: 60px 20px 40px;
-  background: linear-gradient(180deg, rgba(0,240,255,0.04) 0%, rgba(255,0,170,0.02) 50%, transparent 100%);
+  background: linear-gradient(180deg, rgba(0,240,255,0.03) 0%, transparent 100%);
 }
 .hero h1 {
   font-size: 42px;
   font-weight: 800;
   margin-bottom: 12px;
-  background: linear-gradient(135deg, var(--accent), var(--secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--accent);
+  text-shadow: 0 0 30px rgba(0, 240, 255, 0.2);
 }
 .hero p {
   color: var(--text-dim);
@@ -354,7 +362,8 @@ button { cursor: pointer; font-family: inherit; }
 .room-layout {
   display: grid;
   grid-template-columns: 360px 1fr 380px;
-  height: calc(100vh - var(--header-h) - 49px);
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   position: relative;
   transition: grid-template-columns 0.3s ease;
@@ -529,12 +538,25 @@ button { cursor: pointer; font-family: inherit; }
   flex: 1;
   min-height: 100px;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(0,240,255,0.03) 0%, rgba(255,0,170,0.01) 100%);
+  background: rgba(5, 5, 16, 0.6);
   border-bottom: 1px solid rgba(0, 240, 255, 0.08);
+  position: relative;
 }
 .visualizer-wrap canvas {
   width: 100%;
   height: 100%;
+}
+.visualizer-3d {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+/* Desktop: show 3D, hide 2D canvas */
+.visualizer-2d {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: none;
 }
 
 /* ─── STEREO WAVEFORM ────────────────────────────────────── */
@@ -694,11 +716,11 @@ button { cursor: pointer; font-family: inherit; }
 .progress-bar:hover { height: 6px; }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--secondary));
+  background: var(--accent);
   border-radius: 2px;
   width: 0%;
   transition: width 0.3s linear;
-  box-shadow: 0 0 6px rgba(0, 240, 255, 0.4);
+  box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
 }
 
 .player-bar-right {
@@ -1050,16 +1072,13 @@ button { cursor: pointer; font-family: inherit; }
 /* Hover popup card */
 .listener-popup {
   display: none;
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  position: fixed;
+  z-index: 9000;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 14px;
   min-width: 140px;
-  z-index: 500;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), var(--glow-accent);
   pointer-events: none;
   white-space: nowrap;
@@ -1074,8 +1093,11 @@ button { cursor: pointer; font-family: inherit; }
   border: 6px solid transparent;
   border-top-color: var(--border);
 }
-.listener-item:hover .listener-popup {
-  display: block;
+.listener-popup.below::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--border);
 }
 
 .listener-popup-name {
@@ -1261,8 +1283,7 @@ button { cursor: pointer; font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  background: rgba(2, 2, 8, 0.85);
 }
 .search-modal-content {
   background: var(--bg-card);
@@ -1383,11 +1404,16 @@ button { cursor: pointer; font-family: inherit; }
 
 /* ─── RESPONSIVE ─────────────────────────────────────────── */
 @media (max-width: 900px) {
+  #room-view {
+    height: calc(100vh - var(--header-h) - var(--mobile-tab-h));
+  }
   .room-layout {
     grid-template-columns: 1fr;
-    height: calc(100vh - var(--header-h) - var(--mobile-tab-h));
     position: relative;
   }
+  /* Mobile: hide 3D (too heavy), show 2D canvas fallback */
+  .visualizer-3d { display: none !important; }
+  .visualizer-2d { display: block !important; position: relative; }
 
   .panel-chat,
   .panel-sidebar {

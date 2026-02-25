@@ -13,7 +13,8 @@ import {
   stopSyncLoop, destroy as destroyPlayer, setVolume, getVolume,
   moveInQueue, loadQueueFromData,
 } from './player.js';
-import { initVisualizer, startVisualizer, stopVisualizer, cycleMode, getMode, destroy as destroyVis } from './visualizer.js';
+import { initVisualizer, startVisualizer as startVis2D, stopVisualizer as stopVis2D, cycleMode, getMode, destroy as destroyVis2D } from './visualizer.js';
+import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D } from './visualizer3d.js';
 import {
   initChat, sendMessage, sendGif, handleIncomingMessage, clearChat,
   searchGifs, getTrendingGifs, renderGifPicker, setupGifSearch,
@@ -31,6 +32,22 @@ let announceInterval = null;
 
 // Current room ID for chat persistence
 let currentRoomIdForChat = null;
+
+// Visualizer routing — 3D on desktop, 2D on mobile
+let use3D = window.innerWidth > 900;
+
+function startVisualizer() {
+  if (use3D) startVisualizer3D();
+  else startVis2D();
+}
+function stopVisualizer() {
+  stopVis2D();
+  stopVisualizer3D();
+}
+function destroyVis() {
+  destroyVis2D();
+  destroyVisualizer3D();
+}
 
 // ─── ROUTING ────────────────────────────────────────────────
 
@@ -270,9 +287,14 @@ async function enterRoom(roomId) {
     }
   }
 
-  // Init visualizer
+  // Init visualizers — 3D on desktop, 2D fallback on mobile
+  use3D = window.innerWidth > 900;
   const canvas = document.getElementById('visualizer-canvas');
   if (canvas) initVisualizer(canvas);
+  if (use3D) {
+    const container3d = document.getElementById('visualizer-3d');
+    if (container3d) initVisualizer3D(container3d);
+  }
 
   // Init stereo waveform
   const waveformCanvas = document.getElementById('waveform-canvas');
@@ -377,6 +399,7 @@ function exitRoom() {
   leaveRoom();
   stopSyncLoop();
   stopVisualizer();
+  destroyVis();
   stopWaveform();
   destroyWaveform();
   stopAnalysis();
@@ -603,8 +626,39 @@ function setupPlayerControls() {
 
   if (vizBtn) {
     vizBtn.addEventListener('click', () => {
-      const mode = cycleMode();
-      showToast(`Visualizer: ${mode}`);
+      const isMobile = window.innerWidth <= 900;
+      const vis3dEl = document.getElementById('visualizer-3d');
+      const vis2dEl = document.getElementById('visualizer-canvas');
+
+      if (isMobile) {
+        // Mobile: only cycle 2D modes, no 3D
+        const mode = cycleMode();
+        showToast(`Visualizer: ${mode}`);
+        return;
+      }
+
+      if (use3D) {
+        // Switch from 3D → first 2D mode (bars)
+        use3D = false;
+        stopVisualizer3D();
+        if (vis3dEl) vis3dEl.style.display = 'none';
+        if (vis2dEl) vis2dEl.style.display = 'block';
+        startVis2D();
+        showToast(`Visualizer: ${getMode()}`);
+      } else {
+        const mode = cycleMode();
+        if (mode === 'bars') {
+          // Wrapped around back to bars → switch to 3D
+          use3D = true;
+          stopVis2D();
+          if (vis2dEl) vis2dEl.style.display = 'none';
+          if (vis3dEl) vis3dEl.style.display = '';
+          startVisualizer3D();
+          showToast('Visualizer: 3D');
+        } else {
+          showToast(`Visualizer: ${mode}`);
+        }
+      }
     });
   }
 
@@ -1076,6 +1130,37 @@ function renderListeners(users) {
       img.style.display = 'none';
       const fallback = img.nextElementSibling;
       if (fallback) fallback.style.display = 'flex';
+    });
+  });
+
+  // Position popups with fixed positioning to escape overflow:hidden parents
+  container.querySelectorAll('.listener-item').forEach(item => {
+    const popup = item.querySelector('.listener-popup');
+    if (!popup) return;
+
+    item.addEventListener('mouseenter', () => {
+      const rect = item.getBoundingClientRect();
+      popup.style.display = 'block';
+      // Position above the avatar, centered
+      const popupW = popup.offsetWidth;
+      let left = rect.left + rect.width / 2 - popupW / 2;
+      let top = rect.top - popup.offsetHeight - 8;
+      // Keep within viewport
+      if (left < 4) left = 4;
+      if (left + popupW > window.innerWidth - 4) left = window.innerWidth - popupW - 4;
+      if (top < 4) {
+        // Show below instead
+        top = rect.bottom + 8;
+        popup.classList.add('below');
+      } else {
+        popup.classList.remove('below');
+      }
+      popup.style.left = left + 'px';
+      popup.style.top = top + 'px';
+    });
+
+    item.addEventListener('mouseleave', () => {
+      popup.style.display = 'none';
     });
   });
 }

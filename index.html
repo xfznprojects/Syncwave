@@ -7,6 +7,14 @@
   <link rel="stylesheet" href="css/style.css">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://esm.sh/three@0.175.0",
+      "three/addons/": "https://esm.sh/three@0.175.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
 
@@ -87,7 +95,8 @@
       <div class="room-panel panel-center tab-panel" data-panel="player">
         <!-- Spectrum Visualizer -->
         <div class="visualizer-wrap">
-          <canvas id="visualizer-canvas"></canvas>
+          <div id="visualizer-3d" class="visualizer-3d"></div>
+          <canvas id="visualizer-canvas" class="visualizer-2d"></canvas>
         </div>
 
         <!-- Inline Player Bar (between chat and sidebar) -->

@@ -5,10 +5,10 @@
  * Hooks into our existing player.js analyser node
  */
 
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getAnalyser } from './player.js';
 
+let THREE = null;
+let OrbitControls = null;
 let container = null;
 let scene, camera, renderer, controls;
 let anomalyGroup = null;
@@ -31,8 +31,19 @@ const MAX_PIXEL_RATIO = isLowEnd ? 1 : 2;
 
 // ─── PUBLIC API ──────────────────────────────────────────
 
-export function initVisualizer3D(containerEl) {
+export async function initVisualizer3D(containerEl) {
   container = containerEl;
+
+  // Dynamically load Three.js so a CDN failure doesn't break the whole app
+  try {
+    [THREE, { OrbitControls }] = await Promise.all([
+      import('three'),
+      import('three/addons/controls/OrbitControls.js'),
+    ]);
+  } catch (e) {
+    console.warn('Three.js failed to load — 3D visualizer disabled:', e.message);
+    return false;
+  }
 
   // Ensure container is positioned for absolute children
   container.style.position = 'relative';
@@ -40,6 +51,7 @@ export function initVisualizer3D(containerEl) {
   initThreeJS();
   initCircularOverlay();
   clock = new THREE.Clock();
+  return true;
 }
 
 export function startVisualizer3D() {

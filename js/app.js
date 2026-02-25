@@ -293,7 +293,14 @@ async function enterRoom(roomId) {
   if (canvas) initVisualizer(canvas);
   if (use3D) {
     const container3d = document.getElementById('visualizer-3d');
-    if (container3d) initVisualizer3D(container3d);
+    if (container3d) {
+      const ok = await initVisualizer3D(container3d);
+      if (!ok) {
+        // Three.js failed to load — fall back to 2D
+        use3D = false;
+        console.warn('Falling back to 2D visualizer');
+      }
+    }
   }
 
   // Init stereo waveform

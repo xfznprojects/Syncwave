@@ -68,6 +68,23 @@ export async function loadPlaylist(userId) {
 
 let roomSaveTimeout = null;
 
+function buildRoomRow(roomData) {
+  return {
+    room_id: roomData.roomId,
+    host_name: roomData.hostName || null,
+    host_handle: roomData.hostHandle || null,
+    host_avatar: roomData.hostAvatar || null,
+    host_user_id: roomData.hostUserId || null,
+    current_track: roomData.currentTrack || null,
+    user_count: roomData.userCount || 0,
+    playlist: roomData.playlist ? JSON.stringify(roomData.playlist) : '[]',
+    muted_users: roomData.mutedUsers ? JSON.stringify(roomData.mutedUsers) : '[]',
+    banned_users: roomData.bannedUsers ? JSON.stringify(roomData.bannedUsers) : '[]',
+    playback_state: roomData.playbackState ? JSON.stringify(roomData.playbackState) : null,
+    last_active_at: new Date().toISOString(),
+  };
+}
+
 export async function saveRoom(roomData) {
   // Debounce: wait 2 seconds after last call
   clearTimeout(roomSaveTimeout);
@@ -77,20 +94,7 @@ export async function saveRoom(roomData) {
         const client = getClient();
         const { error } = await client
           .from('rooms')
-          .upsert({
-            room_id: roomData.roomId,
-            host_name: roomData.hostName || null,
-            host_handle: roomData.hostHandle || null,
-            host_avatar: roomData.hostAvatar || null,
-            host_user_id: roomData.hostUserId || null,
-            current_track: roomData.currentTrack || null,
-            user_count: roomData.userCount || 0,
-            playlist: roomData.playlist ? JSON.stringify(roomData.playlist) : '[]',
-            muted_users: roomData.mutedUsers ? JSON.stringify(roomData.mutedUsers) : '[]',
-            banned_users: roomData.bannedUsers ? JSON.stringify(roomData.bannedUsers) : '[]',
-            playback_state: roomData.playbackState ? JSON.stringify(roomData.playbackState) : null,
-            last_active_at: new Date().toISOString(),
-          }, { onConflict: 'room_id' });
+          .upsert(buildRoomRow(roomData), { onConflict: 'room_id' });
 
         if (error) throw error;
         resolve(true);
@@ -100,6 +104,22 @@ export async function saveRoom(roomData) {
       }
     }, 2000);
   });
+}
+
+// Immediate (non-debounced) save — used on room exit to ensure state is persisted
+export async function saveRoomImmediate(roomData) {
+  clearTimeout(roomSaveTimeout); // cancel any pending debounced save
+  try {
+    const client = getClient();
+    const { error } = await client
+      .from('rooms')
+      .upsert(buildRoomRow(roomData), { onConflict: 'room_id' });
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.warn('Failed to save room to Supabase:', e);
+    return false;
+  }
 }
 
 export async function updateRoomUserCount(roomId, userCount) {

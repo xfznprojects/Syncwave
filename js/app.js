@@ -15,6 +15,7 @@ import {
   onPlayerEvent, handleSync, handleTrackChange, getAnalyser, resumeAudioContext,
   stopSyncLoop, destroy as destroyPlayer, setVolume, getVolume,
   moveInQueue, loadQueueFromData, getAudioElement,
+  startDeterministicSync, stopDeterministicSync,
 } from './player.js';
 import { initVisualizer, startVisualizer as startVis2D, stopVisualizer as stopVis2D, cycleMode, getMode, destroy as destroyVis2D } from './visualizer.js';
 import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D } from './visualizer3d.js';
@@ -29,7 +30,7 @@ import { initWaveform, startWaveform, stopWaveform, zoomIn, zoomOut, getZoomLeve
 import {
   savePlaylist as dbSavePlaylist, loadPlaylist as dbLoadPlaylist,
   saveChatMessage as dbSaveChatMessage, loadChatHistory as dbLoadChatHistory,
-  saveRoom as dbSaveRoom, updateRoomUserCount as dbUpdateRoomUserCount,
+  saveRoom as dbSaveRoom, saveRoomImmediate as dbSaveRoomImmediate, updateRoomUserCount as dbUpdateRoomUserCount,
   loadActiveRooms as dbLoadActiveRooms, loadInactiveRooms as dbLoadInactiveRooms,
   loadRoomPlaylist as dbLoadRoomPlaylist, loadRoomMutedUsers as dbLoadRoomMutedUsers, loadRoomBannedUsers as dbLoadRoomBannedUsers,
   loadRoom as dbLoadRoom, loadPermanentRooms as dbLoadPermanentRooms,
@@ -43,6 +44,10 @@ let announceInterval = null;
 
 // Current room ID for chat persistence
 let currentRoomIdForChat = null;
+
+// Guard: true while exitRoom() is tearing down — prevents onQueueChange from
+// overwriting saved data with empty arrays during cleanup.
+let isExitingRoom = false;
 
 // Social action state (per-session cache to avoid redundant API calls)
 const likedTracks = new Set();    // track IDs the user has favorited this session
@@ -159,6 +164,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   onPlayerEvent('onQueueChange', (queue, idx) => {
     renderQueue(queue, idx);
+    // Don't persist during room exit — clearQueue() fires this with []
+    if (isExitingRoom) return;
     // Persist playlist to DB (logged-in users only)
     const user = getCurrentUser();
     if (user) dbSavePlaylist(user.userId, queue);
@@ -549,63 +556,75 @@ async function enterRoom(roomId) {
   // Setup chat user context menu
   setupChatUserMenu();
 
-  // Permanent 24/7 rooms: no host, load playlist and autoplay immediately
-  if (isPermanentRoom) {
-    if (getQueue().length === 0) {
-      try {
-        const roomPlaylist = await dbLoadRoomPlaylist(roomId);
-        if (roomPlaylist && roomPlaylist.length > 0) {
-          loadQueueFromData(roomPlaylist, false);
-          const restored = await restorePlaybackState(roomData);
-          if (!restored) {
-            playFromQueue(0);
-          }
-        }
-      } catch { /* no saved playlist */ }
+  // Always load the room's saved playlist from DB (for ALL users, host or not).
+  if (getQueue().length === 0) {
+    let roomPlaylist = null;
+
+    // Use roomData.playlist (already fetched) if available
+    if (roomData?.playlist) {
+      const pl = typeof roomData.playlist === 'string' ? JSON.parse(roomData.playlist) : roomData.playlist;
+      if (Array.isArray(pl) && pl.length > 0) roomPlaylist = pl;
     }
-  } else if (getIsHost()) {
-    // Host: announce and restore playlist
-    startAnnouncing(roomId);
 
-    if (getQueue().length === 0) {
-      // Try room's saved playlist first
-      let restored = false;
-      if (roomData?.playlist) {
-        const playlist = typeof roomData.playlist === 'string' ? JSON.parse(roomData.playlist) : roomData.playlist;
-        if (Array.isArray(playlist) && playlist.length > 0) {
-          loadQueueFromData(playlist, false);
-          restored = await restorePlaybackState(roomData);
-          if (!restored) showToast(`Restored ${playlist.length} tracks from this room`);
-        }
+    // Fallback: query the playlist column directly
+    if (!roomPlaylist) {
+      try {
+        const pl = await dbLoadRoomPlaylist(roomId);
+        if (pl && pl.length > 0) roomPlaylist = pl;
+      } catch { /* ignore */ }
+    }
+
+    if (roomPlaylist && roomPlaylist.length > 0) {
+      loadQueueFromData(roomPlaylist, false);
+
+      if (getIsHost()) {
+        // Host: restore playback position from saved state
+        const restored = await restorePlaybackState(roomData);
+        if (!restored) showToast(`Restored ${roomPlaylist.length} tracks from this room`);
       }
+      // Non-host playback is handled by deterministic sync below
+    }
 
-      // Fall back to user's personal playlist
-      if (!restored && getQueue().length === 0 && user) {
-        let saved = null;
-        try { saved = await dbLoadPlaylist(user.userId); } catch { /* ignore */ }
+    // Host-only fallback: user's personal playlist (if room had nothing saved)
+    if (getQueue().length === 0 && getIsHost() && user) {
+      try {
+        const saved = await dbLoadPlaylist(user.userId);
         if (saved && saved.length > 0) {
           loadQueueFromData(saved, false);
           showToast(`Restored ${saved.length} tracks from last session`);
         }
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Host-only: start announcing to lobby
+  if (getIsHost() && !isPermanentRoom) {
+    startAnnouncing(roomId);
+  }
+
+  // Non-host: start deterministic sync (keeps all listeners in sync without a host).
+  // Works for permanent 24/7 rooms AND user rooms where the host is absent.
+  // If a live host starts broadcasting, deterministic sync automatically defers to it.
+  // If the host later leaves, deterministic sync resumes from the last known position.
+  if (!getIsHost() && getQueue().length > 0) {
+    let refTime, refIndex = 0, refPosition = 0;
+
+    if (roomData?.playbackState) {
+      const ps = typeof roomData.playbackState === 'string'
+        ? JSON.parse(roomData.playbackState) : roomData.playbackState;
+      if (ps.savedAt) {
+        refTime = ps.savedAt;
+        refIndex = ps.trackIndex || 0;
+        refPosition = ps.position || 0;
       }
     }
-  } else {
-    // Non-host: wait a moment for host sync, then auto-play room playlist if no host responds
-    setTimeout(async () => {
-      if (getQueue().length === 0) {
-        try {
-          const roomPlaylist = await dbLoadRoomPlaylist(roomId);
-          if (roomPlaylist && roomPlaylist.length > 0) {
-            loadQueueFromData(roomPlaylist, false);
-            const restored = await restorePlaybackState(roomData);
-            if (!restored) {
-              playFromQueue(0);
-              showToast(`Playing ${roomPlaylist.length} tracks from this room`);
-            }
-          }
-        } catch { /* no saved playlist */ }
-      }
-    }, 3000);
+
+    // No saved playback state — use room creation time as reference (playlist loops from start)
+    if (!refTime) {
+      refTime = roomData?.createdAt ? new Date(roomData.createdAt).getTime() : Date.now();
+    }
+
+    startDeterministicSync(refTime, refIndex, refPosition);
   }
 
   // Reset song requests
@@ -614,10 +633,40 @@ async function enterRoom(roomId) {
 }
 
 function exitRoom() {
+  isExitingRoom = true;
+
+  // Persist room state immediately BEFORE clearing host status / queue
+  const roomId = getRoomId();
+  if (roomId && getIsHost()) {
+    const user = getCurrentUser();
+    const track = getCurrentTrack();
+    const users = getUsers();
+    const audio = getAudioElement();
+    dbSaveRoomImmediate({
+      roomId,
+      hostName: user?.name || roomId,
+      hostHandle: user?.handle || roomId,
+      hostAvatar: user?.profilePicture?.['150x150'] || null,
+      hostUserId: user?.userId || null,
+      userCount: Math.max(0, users.length - 1), // we're leaving
+      currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
+      playlist: getQueue(),
+      mutedUsers: Array.from(mutedUsers),
+      bannedUsers: Array.from(bannedUsers),
+      playbackState: track ? {
+        trackIndex: getCurrentIndex(),
+        position: audio?.currentTime || 0,
+        duration: audio?.duration || 0,
+        savedAt: Date.now(),
+      } : null,
+    });
+  }
+
   currentRoomIdForChat = null;
   stopAnnouncing();
   leaveRoom();
   stopSyncLoop();
+  stopDeterministicSync();
   pause();
   clearQueue();
   stopVisualizer();
@@ -641,6 +690,8 @@ function exitRoom() {
   }
   const headerBadge = document.getElementById('listener-count-header');
   if (headerBadge) headerBadge.classList.add('hidden');
+
+  isExitingRoom = false;
 }
 
 // ─── SEARCH WITH TABS ───────────────────────────────────────

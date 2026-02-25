@@ -310,6 +310,122 @@ export function isShuffled() {
   return shuffleMode;
 }
 
+// ─── DETERMINISTIC SYNC (hostless rooms) ────────────────────
+// All clients independently calculate the same playback position from a shared
+// reference timestamp. No host broadcasts needed — everyone stays in sync by math.
+let deterministicInterval = null;
+let deterministicRef = null; // { time, trackIndex, position }
+let lastHostSyncTime = 0;
+
+// Pure calculation: given "at refTime, playlist was at startIndex:startPosition",
+// calculate where playback should be NOW (accounting for looping).
+export function calculateDeterministicPosition(tracks, refTime, startIndex = 0, startPosition = 0) {
+  if (!tracks || tracks.length === 0) return null;
+
+  const totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 180), 0);
+  if (totalDuration <= 0) return null;
+
+  const elapsed = (Date.now() - refTime) / 1000;
+
+  // Convert to absolute playlist time: sum of durations before startIndex + startPosition + elapsed
+  let absTime = startPosition + elapsed;
+  for (let i = 0; i < startIndex && i < tracks.length; i++) {
+    absTime += tracks[i]?.duration || 180;
+  }
+
+  // Wrap for looping
+  absTime = ((absTime % totalDuration) + totalDuration) % totalDuration;
+
+  // Walk playlist to find track and position within it
+  let cumulative = 0;
+  for (let i = 0; i < tracks.length; i++) {
+    const dur = tracks[i]?.duration || 180;
+    if (absTime < cumulative + dur) {
+      return { trackIndex: i, position: absTime - cumulative };
+    }
+    cumulative += dur;
+  }
+  return { trackIndex: 0, position: 0 };
+}
+
+export function startDeterministicSync(refTime, startIndex = 0, startPosition = 0) {
+  stopDeterministicSync();
+  deterministicRef = { time: refTime, trackIndex: startIndex, position: startPosition };
+
+  // Apply immediately, then correct drift periodically
+  applyDeterministicPosition();
+  deterministicInterval = setInterval(applyDeterministicPosition, CONFIG.SYNC_INTERVAL_MS);
+}
+
+export function stopDeterministicSync() {
+  if (deterministicInterval) {
+    clearInterval(deterministicInterval);
+    deterministicInterval = null;
+  }
+  deterministicRef = null;
+}
+
+async function applyDeterministicPosition() {
+  if (!deterministicRef || getIsHost()) return;
+  // Defer to live host if one has synced recently
+  if (Date.now() - lastHostSyncTime < CONFIG.SYNC_INTERVAL_MS * 2) return;
+  if (queue.length === 0) return;
+
+  const pos = calculateDeterministicPosition(
+    queue, deterministicRef.time, deterministicRef.trackIndex, deterministicRef.position
+  );
+  if (!pos) return;
+
+  if (!audio) initPlayer();
+  resumeAudioContext();
+
+  const needsTrackSwitch = currentIndex !== pos.trackIndex || !currentTrack;
+
+  if (needsTrackSwitch) {
+    // Switch to the correct track
+    if (!audio.paused) audio.pause();
+    currentIndex = pos.trackIndex;
+    currentTrack = queue[pos.trackIndex];
+    audio.src = getStreamUrl(currentTrack.id);
+    audio.load();
+    startedAt = Date.now() - (pos.position * 1000);
+
+    if (listeners.onTrackChange) listeners.onTrackChange(currentTrack);
+    if (listeners.onPlayStateChange) listeners.onPlayStateChange(true);
+
+    const seekPos = pos.position;
+    try {
+      await audio.play();
+      // Seek after playback starts
+      if (seekPos > 0) {
+        if (audio.readyState >= 2 && audio.duration && seekPos < audio.duration) {
+          audio.currentTime = seekPos;
+        } else {
+          audio.addEventListener('loadedmetadata', () => {
+            if (seekPos < audio.duration) audio.currentTime = seekPos;
+          }, { once: true });
+        }
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') console.warn('Deterministic sync autoplay blocked:', e);
+    }
+  } else if (!audio.paused) {
+    // Right track, playing — correct drift if needed
+    const drift = Math.abs(audio.currentTime - pos.position);
+    if (drift > CONFIG.DRIFT_THRESHOLD_MS / 1000) {
+      audio.currentTime = pos.position;
+      startedAt = Date.now() - (pos.position * 1000);
+    }
+  } else if (currentTrack) {
+    // Right track but paused (autoplay blocked?) — try resuming
+    audio.currentTime = pos.position;
+    startedAt = Date.now() - (pos.position * 1000);
+    try { await audio.play(); } catch { /* autoplay blocked */ }
+    if (listeners.onPlayStateChange) listeners.onPlayStateChange(!audio.paused);
+  }
+}
+
+// ─── HOST SYNC ──────────────────────────────────────────────
 // Sync: host broadcasts current state
 function broadcastSync() {
   broadcast('sync', {
@@ -342,6 +458,17 @@ export function stopSyncLoop() {
 // Listener: handle sync messages from host
 export async function handleSync(data) {
   if (getIsHost()) return; // host doesn't sync to itself
+  lastHostSyncTime = Date.now();
+
+  // Keep deterministic reference in sync with host state so that if
+  // the host leaves, deterministic sync continues from the right position.
+  if (deterministicRef && data.currentIndex != null) {
+    deterministicRef = {
+      time: Date.now(),
+      trackIndex: data.currentIndex,
+      position: data.currentTime || 0,
+    };
+  }
 
   // Update queue if provided
   if (data.queue) {
@@ -386,6 +513,7 @@ export async function handleSync(data) {
 // Handle track change broadcast from host
 export async function handleTrackChange(data) {
   if (getIsHost()) return;
+  lastHostSyncTime = Date.now();
   if (data.track) {
     await playTrack(data.track);
     if (data.startedAt) {
@@ -413,6 +541,7 @@ function serializeTrack(track) {
 
 export function destroy() {
   stopSyncLoop();
+  stopDeterministicSync();
   if (audio) {
     audio.pause();
     audio.src = '';

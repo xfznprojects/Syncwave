@@ -552,6 +552,7 @@ button { cursor: pointer; font-family: inherit; }
   height: 45px;
   border-radius: 50%;
   object-fit: cover;
+  margin-top: 8px;
 }
 .chat-avatar-fallback {
   width: 45px;
@@ -582,6 +583,32 @@ button { cursor: pointer; font-family: inherit; }
 }
 .chat-name { font-size: 0.85rem; font-weight: 600; color: var(--accent); cursor: pointer; }
 .chat-name:hover { text-decoration: underline; text-shadow: 0 0 6px rgba(0, 240, 255, 0.4); }
+.chat-verified {
+  color: var(--accent);
+  font-size: 0.7rem;
+  margin-left: 2px;
+  text-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
+}
+.chat-audio-badge {
+  font-size: 0.7rem;
+  margin-left: 3px;
+}
+.chat-badge-bronze {
+  color: #cd7f32;
+  text-shadow: 0 0 6px rgba(205, 127, 50, 0.5);
+}
+.chat-badge-silver {
+  color: #c0c0c0;
+  text-shadow: 0 0 6px rgba(192, 192, 192, 0.6);
+}
+.chat-badge-gold {
+  color: #ffd700;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+.chat-badge-platinum {
+  color: #00f0ff;
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.7);
+}
 .chat-time { font-size: 0.7rem; color: var(--text-dim); font-family: var(--font-mono); }
 .chat-text { font-size: 1rem; line-height: 1.45; word-break: break-word; }
 

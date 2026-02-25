@@ -1,9 +1,26 @@
 import CONFIG from './config.js';
+import { getUser } from './audius.js';
 
 const STORAGE_KEY = 'syncwave_user';
 const TOKEN_KEY = 'syncwave_token';
 let currentUser = null;
 let encodedToken = null;
+
+// $AUDIO badge tiers based on total_audio_balance
+const BADGE_TIERS = [
+  { min: 100000, tier: 'platinum' },
+  { min: 10000,  tier: 'gold' },
+  { min: 100,    tier: 'silver' },
+  { min: 10,     tier: 'bronze' },
+];
+
+export function getAudioBadge(totalAudioBalance) {
+  const bal = Number(totalAudioBalance) || 0;
+  for (const { min, tier } of BADGE_TIERS) {
+    if (bal >= min) return tier;
+  }
+  return null;
+}
 
 // Load persisted session on startup
 export function initAuth() {
@@ -96,6 +113,23 @@ export function loginWithAudius() {
       }
     }, 500);
   });
+}
+
+// Fetch the full Audius profile to get total_audio_balance (for badge tier).
+// Called after login and on app startup for returning sessions.
+export async function enrichUserProfile() {
+  if (!currentUser?.userId) return;
+  try {
+    const profile = await getUser(currentUser.userId);
+    if (profile) {
+      currentUser.totalAudioBalance = profile.total_audio_balance || 0;
+      currentUser.audioBadge = getAudioBadge(currentUser.totalAudioBalance);
+      currentUser.verified = profile.is_verified || false;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser));
+    }
+  } catch {
+    // Non-critical — badge just won't show
+  }
 }
 
 export function getToken() {

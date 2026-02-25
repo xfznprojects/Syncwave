@@ -3,7 +3,7 @@ import {
   searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, setImageWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl, getPlaylistTracks,
   favoriteTrack, unfavoriteTrack, repostTrack, unrepostTrack, followUser, unfollowUser,
 } from './audius.js';
-import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout, getToken } from './auth.js';
+import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout, getToken, enrichUserProfile } from './auth.js';
 import {
   createRoom, joinRoom, leaveRoom, broadcast, onRoomEvent,
   getIsHost, getRoomId, getUsers, joinLobby, leaveLobby, onLobbyUpdate, announceRoom,
@@ -88,6 +88,7 @@ function navigate(path) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initAuth();
+  enrichUserProfile(); // fire-and-forget: fetch $AUDIO balance for badge tier
   renderAuthUI();
   initPlayer();
   await joinLobby();

@@ -31,6 +31,8 @@ export function sendMessage(text) {
     handle: sanitizeName(user?.handle || 'Anonymous'),
     name: sanitizeName(user?.name || 'Anonymous'),
     avatar: sanitizeUrl(user?.profilePicture?.['150x150'] || null),
+    verified: !!user?.verified,
+    audioBadge: user?.audioBadge || null,
     text: safeText,
     gifUrl: null,
     timestamp: Date.now(),
@@ -54,6 +56,8 @@ export function sendGif(gifUrl, previewUrl) {
     handle: sanitizeName(user?.handle || 'Anonymous'),
     name: sanitizeName(user?.name || 'Anonymous'),
     avatar: sanitizeUrl(user?.profilePicture?.['150x150'] || null),
+    verified: !!user?.verified,
+    audioBadge: user?.audioBadge || null,
     text: '',
     gifUrl: safeGifUrl,
     previewUrl: safePreviewUrl || safeGifUrl,
@@ -73,6 +77,8 @@ export function handleIncomingMessage(message, { skipRateLimit = false } = {}) {
     handle: sanitizeName(message.handle),
     name: sanitizeName(message.name),
     avatar: sanitizeUrl(message.avatar),
+    verified: message.verified === true,
+    audioBadge: ['bronze', 'silver', 'gold', 'platinum'].includes(message.audioBadge) ? message.audioBadge : null,
     text: String(message.text || '').slice(0, MAX_MESSAGE_LENGTH),
     gifUrl: sanitizeUrl(message.gifUrl),
     previewUrl: sanitizeUrl(message.previewUrl || message.gifUrl),
@@ -137,6 +143,20 @@ function renderMessage(msg) {
     ? `<span class="chat-muted-label"><i class="fa-solid fa-volume-xmark"></i> Muted</span><button class="btn-unmute" data-unmute-id="${escapeHtml(msg.userId || '')}"><i class="fa-solid fa-volume-high"></i> Unmute</button>`
     : '';
 
+  const verifiedBadge = msg.verified ? '<span class="chat-verified" title="Verified on Audius"><i class="fa-solid fa-circle-check"></i></span>' : '';
+
+  // $AUDIO tier badge (bronze/silver/gold/platinum)
+  const BADGE_CONFIG = {
+    bronze:   { icon: 'fa-solid fa-award', label: 'Bronze' },
+    silver:   { icon: 'fa-solid fa-award', label: 'Silver' },
+    gold:     { icon: 'fa-solid fa-award', label: 'Gold' },
+    platinum: { icon: 'fa-solid fa-gem',   label: 'Platinum' },
+  };
+  const badgeCfg = msg.audioBadge && BADGE_CONFIG[msg.audioBadge];
+  const audioBadgeHtml = badgeCfg
+    ? `<span class="chat-audio-badge chat-badge-${escapeHtml(msg.audioBadge)}" title="${badgeCfg.label} $AUDIO Badge"><i class="${badgeCfg.icon}"></i></span>`
+    : '';
+
   el.innerHTML = `
     <div class="chat-avatar">
       ${safeAvatar ? `<img src="${safeAvatar}" alt="${escapeHtml(msg.handle)}" loading="lazy">` : ''}
@@ -144,7 +164,7 @@ function renderMessage(msg) {
     </div>
     <div class="chat-body">
       <div class="chat-header">
-        <span class="chat-name" data-user-id="${escapeHtml(msg.userId || '')}" data-handle="${escapeHtml(msg.handle || '')}" data-name="${escapeHtml(msg.name || '')}">${escapeHtml(msg.name)}</span>
+        <span class="chat-name" data-user-id="${escapeHtml(msg.userId || '')}" data-handle="${escapeHtml(msg.handle || '')}" data-name="${escapeHtml(msg.name || '')}">${escapeHtml(msg.name)}</span>${verifiedBadge}${audioBadgeHtml}
         <span class="chat-time">${timeStr}</span>
         ${muteNotice}
       </div>

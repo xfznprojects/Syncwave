@@ -5,6 +5,9 @@
 --   DROP POLICY IF EXISTS "Allow all playlist operations" ON playlists;
 --   DROP POLICY IF EXISTS "Allow all chat operations" ON chat_messages;
 --   DROP POLICY IF EXISTS "Allow all room operations" ON rooms;
+-- To add the muted_users and banned_users columns to an existing rooms table:
+--   ALTER TABLE rooms ADD COLUMN IF NOT EXISTS muted_users JSONB DEFAULT '[]';
+--   ALTER TABLE rooms ADD COLUMN IF NOT EXISTS banned_users JSONB DEFAULT '[]';
 
 -- ─── PLAYLISTS TABLE ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS playlists (
@@ -61,6 +64,8 @@ CREATE TABLE IF NOT EXISTS rooms (
   current_track JSONB,
   user_count INTEGER DEFAULT 0,
   playlist JSONB DEFAULT '[]',
+  muted_users JSONB DEFAULT '[]',
+  banned_users JSONB DEFAULT '[]',
   created_at TIMESTAMPTZ DEFAULT now(),
   last_active_at TIMESTAMPTZ DEFAULT now()
 );

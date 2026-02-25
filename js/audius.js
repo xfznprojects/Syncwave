@@ -75,10 +75,16 @@ export async function getUserFavorites(userId, limit = 25, offset = 0) {
   return data.data || [];
 }
 
-// Resolve an Audius URL (e.g. https://audius.co/user/track-slug) to a track object
+// Resolve an Audius URL (track, playlist, or user) to its API object
 export async function resolveUrl(url) {
   const data = await apiFetch(`/resolve?url=${encodeURIComponent(url)}`);
   return data.data;
+}
+
+// Get tracks from a playlist by ID
+export async function getPlaylistTracks(playlistId) {
+  const data = await apiFetch(`/playlists/${playlistId}/tracks`);
+  return data.data || [];
 }
 
 // Get user avatar URL from profile picture object

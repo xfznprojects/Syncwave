@@ -90,6 +90,8 @@ export async function saveRoom(roomData) {
             current_track: roomData.currentTrack || null,
             user_count: roomData.userCount || 0,
             playlist: roomData.playlist ? JSON.stringify(roomData.playlist) : '[]',
+            muted_users: roomData.mutedUsers ? JSON.stringify(roomData.mutedUsers) : '[]',
+            banned_users: roomData.bannedUsers ? JSON.stringify(roomData.bannedUsers) : '[]',
             last_active_at: new Date().toISOString(),
           }, { onConflict: 'room_id' });
 
@@ -170,6 +172,46 @@ export async function loadRoomPlaylist(roomId) {
   return null;
 }
 
+export async function loadRoomBannedUsers(roomId) {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('rooms')
+      .select('banned_users')
+      .eq('room_id', roomId)
+      .single();
+
+    if (error) throw error;
+    if (data?.banned_users) {
+      const arr = typeof data.banned_users === 'string' ? JSON.parse(data.banned_users) : data.banned_users;
+      return Array.isArray(arr) ? arr : [];
+    }
+  } catch (e) {
+    console.warn('Failed to load room banned users:', e);
+  }
+  return [];
+}
+
+export async function loadRoomMutedUsers(roomId) {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('rooms')
+      .select('muted_users')
+      .eq('room_id', roomId)
+      .single();
+
+    if (error) throw error;
+    if (data?.muted_users) {
+      const arr = typeof data.muted_users === 'string' ? JSON.parse(data.muted_users) : data.muted_users;
+      return Array.isArray(arr) ? arr : [];
+    }
+  } catch (e) {
+    console.warn('Failed to load room muted users:', e);
+  }
+  return [];
+}
+
 function mapRoomRow(row) {
   return {
     roomId: row.room_id,
@@ -179,6 +221,8 @@ function mapRoomRow(row) {
     currentTrack: row.current_track,
     userCount: row.user_count,
     playlist: row.playlist,
+    mutedUsers: row.muted_users,
+    bannedUsers: row.banned_users,
     lastActiveAt: row.last_active_at,
     createdAt: row.created_at,
   };

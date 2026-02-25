@@ -62,6 +62,7 @@ export function sendGif(gifUrl, previewUrl) {
 
   broadcast('chat', message);
   renderMessage(message);
+  return message;
 }
 
 export function handleIncomingMessage(message) {
@@ -98,6 +99,12 @@ export function setMutedUsersRef(ref) {
   mutedUsersRef = ref;
 }
 
+// Unmute callback (set by app.js)
+let onUnmuteUser = null;
+export function setOnUnmuteUser(callback) {
+  onUnmuteUser = callback;
+}
+
 function renderMessage(msg) {
   if (!chatContainer) return;
 
@@ -123,6 +130,10 @@ function renderMessage(msg) {
   const safeAvatar = msg.avatar ? escapeHtml(msg.avatar) : '';
   const fallbackChar = escapeHtml((msg.name || '?')[0].toUpperCase());
 
+  const muteNotice = isMuted
+    ? `<span class="chat-muted-label"><i class="fa-solid fa-volume-xmark"></i> Muted</span><button class="btn-unmute" data-unmute-id="${escapeHtml(msg.userId || '')}"><i class="fa-solid fa-volume-high"></i> Unmute</button>`
+    : '';
+
   el.innerHTML = `
     <div class="chat-avatar">
       ${safeAvatar ? `<img src="${safeAvatar}" alt="${escapeHtml(msg.handle)}" loading="lazy">` : ''}
@@ -132,6 +143,7 @@ function renderMessage(msg) {
       <div class="chat-header">
         <span class="chat-name" data-user-id="${escapeHtml(msg.userId || '')}" data-handle="${escapeHtml(msg.handle || '')}" data-name="${escapeHtml(msg.name || '')}">${escapeHtml(msg.name)}</span>
         <span class="chat-time">${timeStr}</span>
+        ${muteNotice}
       </div>
       ${contentHtml}
     </div>
@@ -145,6 +157,17 @@ function renderMessage(msg) {
         img.style.display = 'none';
         const fallback = img.nextElementSibling;
         if (fallback) fallback.style.display = 'flex';
+      });
+    }
+  }
+
+  // Unmute button click
+  if (isMuted) {
+    const unmuteBtn = el.querySelector('.btn-unmute');
+    if (unmuteBtn && onUnmuteUser) {
+      unmuteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onUnmuteUser(unmuteBtn.dataset.unmuteId);
       });
     }
   }

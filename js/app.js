@@ -1,6 +1,6 @@
 import CONFIG from './config.js';
 import {
-  searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl,
+  searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl, getPlaylistTracks,
   favoriteTrack, unfavoriteTrack, repostTrack, unrepostTrack, followUser, unfollowUser,
 } from './audius.js';
 import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout, getToken } from './auth.js';
@@ -21,16 +21,17 @@ import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualize
 import {
   initChat, sendMessage, sendGif, handleIncomingMessage, clearChat,
   searchGifs, getTrendingGifs, getTrendingTerms, renderGifPicker, setupGifSearch,
-  setOnChatNameClick, setMutedUsersRef,
+  setOnChatNameClick, setMutedUsersRef, setOnUnmuteUser,
 } from './chat.js';
 import { startAnalysis, stopAnalysis, onAnalysisUpdate, destroy as destroyAnalysis } from './analysis.js';
+import { validateMessage, validateGif, recordMessage, recordGif, resetSpamFilter } from './spam-filter.js';
 import { initWaveform, startWaveform, stopWaveform, zoomIn, zoomOut, getZoomLevel, destroy as destroyWaveform } from './waveform.js';
 import {
   savePlaylist as dbSavePlaylist, loadPlaylist as dbLoadPlaylist,
   saveChatMessage as dbSaveChatMessage, loadChatHistory as dbLoadChatHistory,
   saveRoom as dbSaveRoom, updateRoomUserCount as dbUpdateRoomUserCount,
   loadActiveRooms as dbLoadActiveRooms, loadInactiveRooms as dbLoadInactiveRooms,
-  loadRoomPlaylist as dbLoadRoomPlaylist,
+  loadRoomPlaylist as dbLoadRoomPlaylist, loadRoomMutedUsers as dbLoadRoomMutedUsers, loadRoomBannedUsers as dbLoadRoomBannedUsers,
 } from './database.js';
 
 // Song requests
@@ -96,6 +97,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Room events
   onRoomEvent('onSync', handleSync);
   onRoomEvent('onChat', (msg) => {
+    // Don't render or save messages from muted/kicked users
+    if (mutedUsers.has(msg.userId)) return;
     handleIncomingMessage(msg);
     if (currentRoomIdForChat) dbSaveChatMessage(currentRoomIdForChat, msg);
   });
@@ -115,10 +118,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     persistRoomToDB();
   });
   onRoomEvent('onKick', (data) => {
+    // Everyone in the room mutes the kicked user so their messages stop appearing
+    if (data.userId) mutedUsers.add(data.userId);
     const user = getCurrentUser();
     if (user && data.userId === user.userId) {
       showToast('You have been kicked from the room');
       window.location.hash = '#/';
+    }
+  });
+  onRoomEvent('onBan', (data) => {
+    if (data.userId) {
+      mutedUsers.add(data.userId);
+      bannedUsers.add(data.userId);
+    }
+    const user = getCurrentUser();
+    if (user && data.userId === user.userId) {
+      showToast('You have been banned from chatting in this room');
     }
   });
 
@@ -367,12 +382,21 @@ async function enterRoom(roomId) {
   const user = getCurrentUser();
   const isCreator = user && user.handle === roomId;
 
-  // Init chat
+  // Init chat — load persisted muted users for this room
   const chatMessages = document.getElementById('chat-messages');
   const gifPicker = document.getElementById('gif-picker-grid');
   initChat(chatMessages, gifPicker);
   setOnChatNameClick(showChatUserMenu);
+  try {
+    const [savedMuted, savedBanned] = await Promise.all([
+      dbLoadRoomMutedUsers(roomId),
+      dbLoadRoomBannedUsers(roomId),
+    ]);
+    if (savedMuted.length > 0) savedMuted.forEach(id => mutedUsers.add(id));
+    if (savedBanned.length > 0) savedBanned.forEach(id => { bannedUsers.add(id); mutedUsers.add(id); });
+  } catch { /* ignore */ }
   setMutedUsersRef(mutedUsers);
+  setOnUnmuteUser(handleUnmuteUser);
   clearChat();
 
   // Load prior chat history for this room (from Supabase with localStorage fallback)
@@ -537,14 +561,19 @@ function exitRoom() {
   destroyAnalysis();
   stopPreview();
   clearChat();
+  resetSpamFilter();
+  mutedUsers.clear();
+  bannedUsers.clear();
   songRequests = [];
 
-  // Clear room title from header
+  // Clear room title and listener count from header
   const headerTitle = document.getElementById('header-room-title');
   if (headerTitle) {
     headerTitle.textContent = '';
     headerTitle.classList.add('hidden');
   }
+  const headerBadge = document.getElementById('listener-count-header');
+  if (headerBadge) headerBadge.classList.add('hidden');
 }
 
 // ─── SEARCH WITH TABS ───────────────────────────────────────
@@ -667,21 +696,44 @@ function setupUrlInput() {
       return;
     }
 
-    urlStatus.textContent = 'Resolving track...';
+    urlStatus.textContent = 'Resolving...';
     urlStatus.className = 'url-status';
 
     try {
       const result = await resolveUrl(url);
       if (!result || !result.id) {
-        urlStatus.textContent = 'Could not find a track at that URL';
+        urlStatus.textContent = 'Could not find anything at that URL';
         urlStatus.className = 'url-status error';
         return;
       }
-      addToQueue(result);
-      urlStatus.textContent = `Added "${result.title}" to queue`;
-      urlStatus.className = 'url-status success';
-      urlInput.value = '';
-      showToast(`Added "${result.title}" to queue`);
+
+      // Playlist: has playlist_name and tracks array
+      if (result.playlist_name) {
+        const tracks = result.tracks && result.tracks.length > 0
+          ? result.tracks
+          : await getPlaylistTracks(result.id);
+        if (!tracks || tracks.length === 0) {
+          urlStatus.textContent = 'Playlist is empty';
+          urlStatus.className = 'url-status error';
+          return;
+        }
+        let added = 0;
+        for (const track of tracks) {
+          if (track && track.id) { addToQueue(track); added++; }
+        }
+        urlStatus.textContent = `Added ${added} tracks from "${result.playlist_name}"`;
+        urlStatus.className = 'url-status success';
+        urlInput.value = '';
+        showToast(`Added ${added} tracks from "${result.playlist_name}"`);
+        renderQueue();
+      } else {
+        // Single track
+        addToQueue(result);
+        urlStatus.textContent = `Added "${result.title}" to queue`;
+        urlStatus.className = 'url-status success';
+        urlInput.value = '';
+        showToast(`Added "${result.title}" to queue`);
+      }
     } catch (e) {
       urlStatus.textContent = 'Failed to resolve URL: ' + e.message;
       urlStatus.className = 'url-status error';
@@ -1178,7 +1230,37 @@ function setupCollapsiblePanels() {
 
 // ─── ACCORDION SECTIONS ──────────────────────────────────────
 
+const ACCORDION_STORAGE_KEY = 'syncwave_accordions';
+const ACCORDION_DEFAULTS = { listeners: true, queue: true, requests: false, analysis: true };
+
+function loadAccordionState() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(ACCORDION_STORAGE_KEY));
+    return { ...ACCORDION_DEFAULTS, ...stored };
+  } catch { return { ...ACCORDION_DEFAULTS }; }
+}
+
+function saveAccordionState(state) {
+  try { localStorage.setItem(ACCORDION_STORAGE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+}
+
 function setupAccordions() {
+  const state = loadAccordionState();
+
+  // Restore saved state on load
+  for (const [key, isOpen] of Object.entries(state)) {
+    const body = document.querySelector(`[data-accordion-body="${key}"]`);
+    const header = document.querySelector(`[data-accordion="${key}"]`);
+    if (!body || !header) continue;
+    if (isOpen) {
+      body.classList.remove('closed');
+      header.classList.remove('collapsed');
+    } else {
+      body.classList.add('closed');
+      header.classList.add('collapsed');
+    }
+  }
+
   document.querySelectorAll('.accordion-header').forEach(header => {
     header.addEventListener('click', (e) => {
       // Don't toggle if clicking a button inside the header (collapse, toolbar)
@@ -1196,6 +1278,11 @@ function setupAccordions() {
         body.classList.remove('closed');
         header.classList.remove('collapsed');
       }
+
+      // Persist
+      const current = loadAccordionState();
+      current[key] = !isOpen;
+      saveAccordionState(current);
     });
   });
 }
@@ -1249,7 +1336,25 @@ function closeSearchModal() {
 // ─── CHAT USER CONTEXT MENU (Mute/Kick) ─────────────────────
 
 let mutedUsers = new Set();
+let bannedUsers = new Set();
 let chatMenuTarget = null;
+
+function handleUnmuteUser(userId) {
+  mutedUsers.delete(userId);
+  // Remove muted class and unmute buttons from all messages by this user
+  const chatContainer = document.getElementById('chat-messages');
+  if (chatContainer) {
+    chatContainer.querySelectorAll(`.chat-message[data-user-id="${userId}"]`).forEach(msg => {
+      msg.classList.remove('muted');
+      const label = msg.querySelector('.chat-muted-label');
+      const btn = msg.querySelector('.btn-unmute');
+      if (label) label.remove();
+      if (btn) btn.remove();
+    });
+  }
+  showToast('User unmuted');
+  persistRoomToDB();
+}
 
 function setupChatUserMenu() {
   const menu = document.getElementById('chat-user-menu');
@@ -1282,13 +1387,31 @@ function setupChatUserMenu() {
           });
         }
         showToast(`${isMuted ? 'Unmuted' : 'Muted'} ${chatMenuTarget.name}`);
+        persistRoomToDB();
       } else if (action === 'kick') {
         if (getIsHost()) {
           mutedUsers.add(chatMenuTarget.userId);
           broadcast('kick', { userId: chatMenuTarget.userId });
           showToast(`Kicked ${chatMenuTarget.name}`);
+          persistRoomToDB();
         } else {
           showToast('Only the host can kick users');
+        }
+      } else if (action === 'ban') {
+        if (getIsHost()) {
+          const isBanned = bannedUsers.has(chatMenuTarget.userId);
+          if (isBanned) {
+            bannedUsers.delete(chatMenuTarget.userId);
+            showToast(`Unbanned ${chatMenuTarget.name}`);
+          } else {
+            bannedUsers.add(chatMenuTarget.userId);
+            mutedUsers.add(chatMenuTarget.userId);
+            broadcast('ban', { userId: chatMenuTarget.userId });
+            showToast(`Banned ${chatMenuTarget.name} from chat`);
+          }
+          persistRoomToDB();
+        } else {
+          showToast('Only the host can ban users');
         }
       }
 
@@ -1304,18 +1427,26 @@ function showChatUserMenu(e, userId, handle, name) {
 
   chatMenuTarget = { userId, handle, name };
 
-  // Show/hide kick option based on host status
+  // Show/hide kick and ban options based on host status
+  const isHost = getIsHost();
   const kickBtn = menu.querySelector('[data-action="kick"]');
-  if (kickBtn) kickBtn.style.display = getIsHost() ? '' : 'none';
+  if (kickBtn) kickBtn.style.display = isHost ? '' : 'none';
+  const banBtn = menu.querySelector('[data-action="ban"]');
+  if (banBtn) {
+    banBtn.style.display = isHost ? '' : 'none';
+    const isBanned = bannedUsers.has(userId);
+    banBtn.innerHTML = isBanned
+      ? '<i class="fa-solid fa-ban"></i> Unban from Chat'
+      : '<i class="fa-solid fa-ban"></i> Ban from Chat';
+  }
 
-  // Update mute button text
-  const muteBtn = menu.querySelector('[data-action="mute"]');
-  if (muteBtn) {
-    if (mutedUsers.has(userId)) {
-      muteBtn.textContent = 'Unmute User';
-    } else {
-      muteBtn.textContent = 'Mute User';
-    }
+  // Update mute button text (preserve icon)
+  const muteActionBtn = menu.querySelector('[data-action="mute"]');
+  if (muteActionBtn) {
+    const isMuted = mutedUsers.has(userId);
+    muteActionBtn.innerHTML = isMuted
+      ? '<i class="fa-solid fa-volume-high"></i> Unmute User'
+      : '<i class="fa-solid fa-volume-xmark"></i> Mute User';
   }
 
   // Position near the click
@@ -1473,9 +1604,12 @@ function setupQueueToolbar() {
 
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
-      if (getQueue().length === 0) { showToast('Queue already empty'); return; }
-      clearQueue();
-      showToast('Queue cleared');
+      const q = getQueue();
+      if (q.length === 0) { showToast('Queue already empty'); return; }
+      showConfirm(`Clear all ${q.length} tracks from the queue?`, () => {
+        clearQueue();
+        showToast('Queue cleared');
+      });
     });
   }
 }
@@ -1525,9 +1659,11 @@ function getChatHistory(roomId) {
 function renderListeners(users) {
   const container = document.getElementById('listeners-list');
   const countEl = document.getElementById('listener-count');
+  const headerBadge = document.getElementById('listener-count-header');
   if (!container) return;
 
   if (countEl) countEl.textContent = users.length;
+  if (headerBadge) headerBadge.classList.remove('hidden');
 
   // Remove any existing floating popup from a previous render
   const oldPopup = document.getElementById('listener-floating-popup');
@@ -1633,8 +1769,17 @@ function setupChatInput() {
   input.maxLength = 500;
 
   const doSend = () => {
+    if (!requireLogin('send messages')) return;
+    const user = getCurrentUser();
+    if (user && bannedUsers.has(user.userId)) { showToast('You are banned from chatting in this room'); return; }
     const text = input.value.trim().slice(0, 500);
     if (text) {
+      const check = validateMessage(text);
+      if (!check.ok) {
+        showToast(check.reason);
+        shakeInput(input);
+        return;
+      }
       const user = getCurrentUser();
       const msg = {
         userId: user?.userId || 'anon',
@@ -1646,6 +1791,7 @@ function setupChatInput() {
         timestamp: Date.now(),
       };
       sendMessage(text);
+      recordMessage(text);
       if (currentRoomIdForChat) dbSaveChatMessage(currentRoomIdForChat, msg);
       input.value = '';
     }
@@ -1694,7 +1840,16 @@ function setupGifPicker() {
   }
 
   function onGifSelect(url, preview) {
-    sendGif(url, preview);
+    const check = validateGif();
+    if (!check.ok) {
+      showToast(check.reason);
+      return;
+    }
+    const msg = sendGif(url, preview);
+    if (msg) {
+      recordGif();
+      if (currentRoomIdForChat) dbSaveChatMessage(currentRoomIdForChat, msg);
+    }
     closeGifPicker();
   }
 
@@ -1758,7 +1913,12 @@ function setupGifPicker() {
   gifBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (gifPickerOpen) closeGifPicker();
-    else openGifPicker();
+    else {
+      if (!requireLogin('send GIFs')) return;
+      const gifUser = getCurrentUser();
+      if (gifUser && bannedUsers.has(gifUser.userId)) { showToast('You are banned from chatting in this room'); return; }
+      openGifPicker();
+    }
   });
 
   // Search button click
@@ -1948,6 +2108,8 @@ function persistRoomToDB() {
     userCount: users.length,
     currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
     playlist: getQueue(),
+    mutedUsers: Array.from(mutedUsers),
+    bannedUsers: Array.from(bannedUsers),
   });
 }
 
@@ -1962,6 +2124,29 @@ function stopAnnouncing() {
     announceRoom({ roomId, userCount: 0 });
     dbUpdateRoomUserCount(roomId, 0);
   }
+}
+
+function showConfirm(message, onConfirm) {
+  const existing = document.querySelector('.confirm-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-dialog">
+      <p class="confirm-message">${escapeHtml(message)}</p>
+      <div class="confirm-actions">
+        <button class="btn btn-secondary confirm-cancel">Cancel</button>
+        <button class="btn btn-primary confirm-ok">Confirm</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('show'));
+
+  const close = () => { overlay.classList.remove('show'); setTimeout(() => overlay.remove(), 200); };
+  overlay.querySelector('.confirm-cancel').addEventListener('click', close);
+  overlay.querySelector('.confirm-ok').addEventListener('click', () => { close(); onConfirm(); });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 }
 
 // ─── UTILS ──────────────────────────────────────────────────
@@ -2023,6 +2208,11 @@ function showToast(message) {
     toast.classList.remove('show');
     setTimeout(() => toast.remove(), 300);
   }, 2500);
+}
+
+function shakeInput(el) {
+  el.classList.add('shake');
+  el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
 }
 
 // Leave room on page unload

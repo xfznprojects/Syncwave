@@ -27,6 +27,7 @@
         <span class="logo-text">SyncWave</span>
       </a>
       <span id="header-room-title" class="header-room-title hidden"></span>
+      <span id="listener-count-header" class="listener-count-header hidden"><i class="fa-solid fa-headphones"></i> <span id="listener-count">0</span></span>
     </div>
     <div class="header-right">
       <span id="auth-name" class="auth-name hidden"></span>
@@ -151,7 +152,7 @@
         <!-- Listeners (accordion) -->
         <div class="sidebar-section" data-panel="listeners">
           <div class="panel-header accordion-header" data-accordion="listeners">
-            <i class="fa-solid fa-users panel-header-icon"></i> Listeners <span id="listener-count" class="listener-count-badge">0</span> <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+            <i class="fa-solid fa-users panel-header-icon"></i> Listeners <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
             <button class="btn-collapse" data-collapse="sidebar" title="Collapse"><i class="fa-solid fa-chevron-right"></i></button>
           </div>
           <div class="accordion-body open" data-accordion-body="listeners">
@@ -164,11 +165,11 @@
           <div class="panel-header accordion-header" data-accordion="queue">
             <i class="fa-solid fa-list panel-header-icon"></i> Queue <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
             <div class="queue-toolbar">
-              <button id="btn-shuffle" class="btn-icon btn-toolbar" title="Shuffle"><i class="fa-solid fa-shuffle"></i></button>
               <button id="btn-add-song" class="btn-icon btn-toolbar" title="Add song"><i class="fa-solid fa-plus"></i></button>
-              <button id="btn-export-playlist" class="btn-icon btn-toolbar" title="Export playlist"><i class="fa-solid fa-download"></i></button>
-              <button id="btn-import-playlist" class="btn-icon btn-toolbar" title="Import playlist"><i class="fa-solid fa-upload"></i></button>
+              <button id="btn-shuffle" class="btn-icon btn-toolbar" title="Shuffle"><i class="fa-solid fa-shuffle"></i></button>
               <button id="btn-clear-queue" class="btn-icon btn-toolbar" title="Clear queue"><i class="fa-solid fa-trash-can"></i></button>
+              <button id="btn-export-playlist" class="btn-icon btn-toolbar" title="Export playlist" style="display:none"><i class="fa-solid fa-download"></i></button>
+              <button id="btn-import-playlist" class="btn-icon btn-toolbar" title="Import playlist" style="display:none"><i class="fa-solid fa-upload"></i></button>
               <input type="file" id="import-playlist-input" accept=".json" style="display:none">
             </div>
           </div>
@@ -244,7 +245,7 @@
         <input id="search-input" type="text" class="input" placeholder="Search Audius tracks..." style="display:none">
         <div id="url-input-area" class="url-input-area" style="display:none">
           <div class="url-input-row">
-            <input id="audius-url-input" type="text" class="input" placeholder="Paste an Audius track URL...">
+            <input id="audius-url-input" type="text" class="input" placeholder="Paste an Audius track or playlist URL...">
             <button id="audius-url-add" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Add</button>
           </div>
           <div id="url-status" class="url-status"></div>
@@ -257,7 +258,8 @@
     <div id="chat-user-menu" class="chat-user-menu hidden">
       <button class="chat-user-menu-item" data-action="profile"><i class="fa-solid fa-user"></i> View on Audius</button>
       <button class="chat-user-menu-item chat-user-menu-danger" data-action="mute"><i class="fa-solid fa-volume-xmark"></i> Mute User</button>
-      <button class="chat-user-menu-item chat-user-menu-danger" data-action="kick"><i class="fa-solid fa-ban"></i> Kick from Room</button>
+      <button class="chat-user-menu-item chat-user-menu-danger" data-action="kick"><i class="fa-solid fa-right-from-bracket"></i> Kick from Room</button>
+      <button class="chat-user-menu-item chat-user-menu-danger" data-action="ban"><i class="fa-solid fa-ban"></i> Ban from Chat</button>
     </div>
 
     <!-- Mobile Tab Bar -->

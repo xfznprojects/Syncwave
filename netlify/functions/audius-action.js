@@ -79,7 +79,17 @@ exports.handler = async (event) => {
     if (!res.ok) {
       return {
         statusCode: res.status,
-        body: JSON.stringify({ error: `Audius API error: ${res.status}`, detail: responseBody }),
+        body: JSON.stringify({
+          error: `Audius API error: ${res.status}`,
+          detail: responseBody,
+          debug: {
+            authMethod: bearerToken ? 'bearer' : 'secret',
+            hasApiKey: !!apiKey,
+            hasSecret: !!apiSecret,
+            hasBearer: !!bearerToken,
+            url,
+          },
+        }),
       };
     }
 

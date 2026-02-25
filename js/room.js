@@ -14,6 +14,7 @@ const listeners = {
   onSongRequest: null,
   onRequestResponse: null,
   onPresenceChange: null,
+  onKick: null,
 };
 
 export function onRoomEvent(event, callback) {
@@ -105,6 +106,10 @@ async function joinChannel(roomId, user) {
 
   currentChannel.on('broadcast', { event: 'request-response' }, ({ payload }) => {
     if (listeners.onRequestResponse) listeners.onRequestResponse(payload);
+  });
+
+  currentChannel.on('broadcast', { event: 'kick' }, ({ payload }) => {
+    if (listeners.onKick) listeners.onKick(payload);
   });
 
   currentChannel.on('broadcast', { event: 'request-state' }, ({ payload }) => {

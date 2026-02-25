@@ -86,11 +86,27 @@ export function handleIncomingMessage(message) {
   renderMessage(safe);
 }
 
+// Callback for chat name click (set by app.js for context menu)
+let onChatNameClick = null;
+export function setOnChatNameClick(callback) {
+  onChatNameClick = callback;
+}
+
+// Muted users set (shared with app.js)
+let mutedUsersRef = null;
+export function setMutedUsersRef(ref) {
+  mutedUsersRef = ref;
+}
+
 function renderMessage(msg) {
   if (!chatContainer) return;
 
+  // Skip muted users
+  const isMuted = mutedUsersRef && mutedUsersRef.has(msg.userId);
+
   const el = document.createElement('div');
-  el.className = 'chat-message';
+  el.className = `chat-message${isMuted ? ' muted' : ''}`;
+  el.dataset.userId = msg.userId || '';
 
   const time = new Date(msg.timestamp);
   const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -114,7 +130,7 @@ function renderMessage(msg) {
     </div>
     <div class="chat-body">
       <div class="chat-header">
-        <span class="chat-name">${escapeHtml(msg.name)}</span>
+        <span class="chat-name" data-user-id="${escapeHtml(msg.userId || '')}" data-handle="${escapeHtml(msg.handle || '')}" data-name="${escapeHtml(msg.name || '')}">${escapeHtml(msg.name)}</span>
         <span class="chat-time">${timeStr}</span>
       </div>
       ${contentHtml}
@@ -131,6 +147,16 @@ function renderMessage(msg) {
         if (fallback) fallback.style.display = 'flex';
       });
     }
+  }
+
+  // Chat name click → context menu
+  const nameEl = el.querySelector('.chat-name');
+  if (nameEl && onChatNameClick) {
+    nameEl.style.cursor = 'pointer';
+    nameEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onChatNameClick(e, nameEl.dataset.userId, nameEl.dataset.handle, nameEl.dataset.name);
+    });
   }
 
   chatContainer.appendChild(el);

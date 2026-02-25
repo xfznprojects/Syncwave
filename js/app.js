@@ -17,6 +17,7 @@ import { initVisualizer, startVisualizer, stopVisualizer, cycleMode, getMode, de
 import {
   initChat, sendMessage, sendGif, handleIncomingMessage, clearChat,
   searchGifs, getTrendingGifs, renderGifPicker, setupGifSearch,
+  setOnChatNameClick, setMutedUsersRef,
 } from './chat.js';
 import { startAnalysis, stopAnalysis, onAnalysisUpdate, destroy as destroyAnalysis } from './analysis.js';
 import { initWaveform, startWaveform, stopWaveform, zoomIn, zoomOut, getZoomLevel, destroy as destroyWaveform } from './waveform.js';
@@ -79,6 +80,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // If room is empty (only us) and we're host, pause
     if (getIsHost() && users.length <= 1) {
       // Keep playing — host is still here
+    }
+  });
+  onRoomEvent('onKick', (data) => {
+    const user = getCurrentUser();
+    if (user && data.userId === user.userId) {
+      showToast('You have been kicked from the room');
+      window.location.hash = '#/';
     }
   });
 
@@ -245,6 +253,8 @@ async function enterRoom(roomId) {
   const chatMessages = document.getElementById('chat-messages');
   const gifPicker = document.getElementById('gif-picker-grid');
   initChat(chatMessages, gifPicker);
+  setOnChatNameClick(showChatUserMenu);
+  setMutedUsersRef(mutedUsers);
   clearChat();
 
   // Load prior chat history for this room (from Supabase with localStorage fallback)
@@ -308,9 +318,6 @@ async function enterRoom(roomId) {
     el.style.display = getIsHost() ? '' : 'none';
   });
 
-  // Load trending tracks for search default
-  loadTrending();
-
   // Setup search
   setupSearch();
 
@@ -331,6 +338,15 @@ async function enterRoom(roomId) {
 
   // Setup collapsible panels
   setupCollapsiblePanels();
+
+  // Setup accordion sections
+  setupAccordions();
+
+  // Setup search modal
+  setupSearchModal();
+
+  // Setup chat user context menu
+  setupChatUserMenu();
 
   // Start lobby announcements if host
   if (getIsHost()) {
@@ -528,11 +544,14 @@ function renderNowPlaying(track) {
   const artist = document.getElementById('np-artist');
 
   if (track) {
-    if (artwork) setArtworkWithFallback(artwork, track, '480x480');
+    if (artwork) {
+      setArtworkWithFallback(artwork, track, '480x480');
+      artwork.classList.remove('hidden');
+    }
     if (title) title.textContent = track.title || 'Unknown Track';
     if (artist) artist.textContent = track.user?.name || track.user?.handle || 'Unknown Artist';
   } else {
-    if (artwork) artwork.src = '';
+    if (artwork) { artwork.src = ''; artwork.classList.add('hidden'); }
     if (title) title.textContent = 'No track playing';
     if (artist) artist.textContent = '';
   }
@@ -681,6 +700,161 @@ function setupCollapsiblePanels() {
       expandSidebar.classList.add('hidden');
     });
   }
+}
+
+// ─── ACCORDION SECTIONS ──────────────────────────────────────
+
+function setupAccordions() {
+  document.querySelectorAll('.accordion-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      // Don't toggle if clicking a button inside the header (collapse, toolbar)
+      if (e.target.closest('.btn-collapse') || e.target.closest('.queue-toolbar') || e.target.closest('.btn-icon')) return;
+
+      const key = header.dataset.accordion;
+      const body = document.querySelector(`[data-accordion-body="${key}"]`);
+      if (!body) return;
+
+      const isOpen = !body.classList.contains('closed');
+      if (isOpen) {
+        body.classList.add('closed');
+        header.classList.add('collapsed');
+      } else {
+        body.classList.remove('closed');
+        header.classList.remove('collapsed');
+      }
+    });
+  });
+}
+
+// ─── SEARCH MODAL ────────────────────────────────────────────
+
+function setupSearchModal() {
+  const modal = document.getElementById('search-modal');
+  const closeBtn = document.getElementById('search-modal-close');
+  const addSongBtn = document.getElementById('btn-add-song');
+
+  if (addSongBtn) {
+    addSongBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSearchModal();
+    });
+  }
+
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => closeSearchModal());
+  }
+
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeSearchModal();
+    });
+  }
+
+  // ESC to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+      closeSearchModal();
+    }
+  });
+}
+
+function openSearchModal() {
+  const modal = document.getElementById('search-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    loadTrending();
+  }
+}
+
+function closeSearchModal() {
+  const modal = document.getElementById('search-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+// ─── CHAT USER CONTEXT MENU (Mute/Kick) ─────────────────────
+
+let mutedUsers = new Set();
+let chatMenuTarget = null;
+
+function setupChatUserMenu() {
+  const menu = document.getElementById('chat-user-menu');
+  if (!menu) return;
+
+  // Close on click outside
+  document.addEventListener('click', (e) => {
+    if (!menu.contains(e.target)) {
+      menu.classList.add('hidden');
+    }
+  });
+
+  // Menu actions
+  menu.querySelectorAll('.chat-user-menu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (!chatMenuTarget) return;
+      const action = item.dataset.action;
+
+      if (action === 'profile') {
+        window.open(`https://audius.co/${chatMenuTarget.handle}`, '_blank', 'noopener');
+      } else if (action === 'mute') {
+        if (mutedUsers.has(chatMenuTarget.userId)) {
+          // Unmute
+          mutedUsers.delete(chatMenuTarget.userId);
+          document.querySelectorAll('.chat-message').forEach(msg => {
+            if (msg.dataset.userId === chatMenuTarget.userId) {
+              msg.classList.remove('muted');
+            }
+          });
+          showToast(`Unmuted ${chatMenuTarget.name}`);
+        } else {
+          // Mute
+          mutedUsers.add(chatMenuTarget.userId);
+          document.querySelectorAll('.chat-message').forEach(msg => {
+            if (msg.dataset.userId === chatMenuTarget.userId) {
+              msg.classList.add('muted');
+            }
+          });
+          showToast(`Muted ${chatMenuTarget.name}`);
+        }
+      } else if (action === 'kick') {
+        if (getIsHost()) {
+          mutedUsers.add(chatMenuTarget.userId);
+          broadcast('kick', { userId: chatMenuTarget.userId });
+          showToast(`Kicked ${chatMenuTarget.name}`);
+        } else {
+          showToast('Only the host can kick users');
+        }
+      }
+
+      menu.classList.add('hidden');
+      chatMenuTarget = null;
+    });
+  });
+}
+
+function showChatUserMenu(e, userId, handle, name) {
+  const menu = document.getElementById('chat-user-menu');
+  if (!menu) return;
+
+  chatMenuTarget = { userId, handle, name };
+
+  // Show/hide kick option based on host status
+  const kickBtn = menu.querySelector('[data-action="kick"]');
+  if (kickBtn) kickBtn.style.display = getIsHost() ? '' : 'none';
+
+  // Update mute button text
+  const muteBtn = menu.querySelector('[data-action="mute"]');
+  if (muteBtn) {
+    if (mutedUsers.has(userId)) {
+      muteBtn.textContent = 'Unmute User';
+    } else {
+      muteBtn.textContent = 'Mute User';
+    }
+  }
+
+  // Position near the click
+  menu.style.left = `${Math.min(e.clientX, window.innerWidth - 180)}px`;
+  menu.style.top = `${Math.min(e.clientY, window.innerHeight - 120)}px`;
+  menu.classList.remove('hidden');
 }
 
 // ─── QUEUE ──────────────────────────────────────────────────

@@ -1,7 +1,9 @@
 import CONFIG from './config.js';
 
 const STORAGE_KEY = 'syncwave_user';
+const TOKEN_KEY = 'syncwave_token';
 let currentUser = null;
+let encodedToken = null;
 
 // Load persisted session on startup
 export function initAuth() {
@@ -13,6 +15,7 @@ export function initAuth() {
       localStorage.removeItem(STORAGE_KEY);
     }
   }
+  encodedToken = localStorage.getItem(TOKEN_KEY) || null;
   return currentUser;
 }
 
@@ -29,7 +32,7 @@ export function loginWithAudius() {
   return new Promise((resolve, reject) => {
     const origin = window.location.origin;
     const authUrl =
-      `https://audius.co/oauth/auth?scope=read` +
+      `https://audius.co/oauth/auth?scope=write` +
       `&api_key=${CONFIG.AUDIUS_API_KEY}` +
       `&redirect_uri=postmessage` +
       `&origin=${encodeURIComponent(origin)}` +
@@ -66,7 +69,9 @@ export function loginWithAudius() {
           profilePicture: payload.profilePicture,
           verified: payload.verified,
         };
+        encodedToken = token;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser));
+        localStorage.setItem(TOKEN_KEY, token);
         resolve(currentUser);
       } catch (e) {
         reject(new Error('Failed to decode token'));
@@ -89,7 +94,13 @@ export function loginWithAudius() {
   });
 }
 
+export function getToken() {
+  return encodedToken;
+}
+
 export function logout() {
   currentUser = null;
+  encodedToken = null;
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(TOKEN_KEY);
 }

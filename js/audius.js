@@ -86,3 +86,46 @@ export function getUserAvatar(user, size = '150x150') {
   if (!user?.profile_picture) return null;
   return user.profile_picture[size] || user.profile_picture['150x150'] || null;
 }
+
+// ─── AUTHENTICATED WRITE OPERATIONS (via Netlify Function proxy) ──────
+// The API secret never leaves the server. All write operations are proxied
+// through /.netlify/functions/audius-action which holds the secret server-side.
+
+async function proxyAction(action, params) {
+  const res = await fetch('/.netlify/functions/audius-action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...params }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Action "${action}" failed: ${res.status} ${body}`);
+  }
+  return res.json();
+}
+
+// Track interactions
+export async function favoriteTrack(trackId, userId) {
+  return proxyAction('favorite', { trackId, userId });
+}
+
+export async function unfavoriteTrack(trackId, userId) {
+  return proxyAction('unfavorite', { trackId, userId });
+}
+
+export async function repostTrack(trackId, userId) {
+  return proxyAction('repost', { trackId, userId });
+}
+
+export async function unrepostTrack(trackId, userId) {
+  return proxyAction('unrepost', { trackId, userId });
+}
+
+// User interactions
+export async function followUser(targetUserId, userId) {
+  return proxyAction('follow', { targetUserId, userId });
+}
+
+export async function unfollowUser(targetUserId, userId) {
+  return proxyAction('unfollow', { targetUserId, userId });
+}

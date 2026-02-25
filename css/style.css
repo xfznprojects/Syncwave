@@ -822,7 +822,7 @@ button { cursor: pointer; font-family: inherit; }
   align-items: center;
   gap: 10px;
   min-width: 140px;
-  max-width: 220px;
+  max-width: 300px;
   flex-shrink: 0;
 }
 .player-bar-artwork-wrap {
@@ -843,6 +843,70 @@ button { cursor: pointer; font-family: inherit; }
 .player-bar-info {
   min-width: 0;
   flex: 1;
+}
+
+/* Social action buttons (like, repost, follow) */
+.social-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.btn-social {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font-size: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.1s;
+}
+.btn-social:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn-social:active {
+  transform: scale(0.9);
+}
+/* Liked state — magenta heart */
+.btn-social.liked {
+  color: var(--secondary);
+  border-color: rgba(255, 0, 170, 0.3);
+  box-shadow: 0 0 8px rgba(255, 0, 170, 0.3);
+}
+.btn-social.liked:hover {
+  color: var(--secondary);
+  box-shadow: 0 0 14px rgba(255, 0, 170, 0.5);
+}
+/* Reposted state — neon green */
+.btn-social.reposted {
+  color: var(--data);
+  border-color: rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+.btn-social.reposted:hover {
+  color: var(--data);
+  box-shadow: 0 0 14px rgba(0, 255, 136, 0.5);
+}
+/* Following state — cyan */
+.btn-social.following {
+  color: var(--accent);
+  border-color: rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.3);
+}
+.btn-social.following:hover {
+  color: var(--accent);
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.5);
+}
+/* Loading spinner state */
+.btn-social.loading {
+  pointer-events: none;
+  opacity: 0.5;
 }
 
 .np-title {
@@ -1729,6 +1793,7 @@ button { cursor: pointer; font-family: inherit; }
   .player-bar-left { min-width: 80px; max-width: 140px; }
   .player-bar-artwork-wrap { width: 40px; height: 40px; }
   .player-bar-artwork { width: 40px; height: 40px; }
+  .social-actions { display: none; }
   .player-bar-right { min-width: auto; }
   .volume-control { display: none; }
 

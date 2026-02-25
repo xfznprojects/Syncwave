@@ -1,6 +1,9 @@
 import CONFIG from './config.js';
-import { searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl } from './audius.js';
-import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout } from './auth.js';
+import {
+  searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl,
+  favoriteTrack, unfavoriteTrack, repostTrack, unrepostTrack, followUser, unfollowUser,
+} from './audius.js';
+import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout, getToken } from './auth.js';
 import {
   createRoom, joinRoom, leaveRoom, broadcast, onRoomEvent,
   getIsHost, getRoomId, getUsers, joinLobby, leaveLobby, onLobbyUpdate, announceRoom,
@@ -38,6 +41,11 @@ let announceInterval = null;
 
 // Current room ID for chat persistence
 let currentRoomIdForChat = null;
+
+// Social action state (per-session cache to avoid redundant API calls)
+const likedTracks = new Set();    // track IDs the user has favorited this session
+const repostedTracks = new Set(); // track IDs the user has reposted this session
+const followedUsers = new Set();  // user IDs the user follows this session
 
 // Visualizer routing — 3D on desktop, 2D on mobile
 let use3D = window.innerWidth > 900;
@@ -177,7 +185,7 @@ function renderAuthUI() {
 
   if (user) {
     authBtn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Logout';
-    authBtn.onclick = () => { logout(); renderAuthUI(); };
+    authBtn.onclick = () => { logout(); likedTracks.clear(); repostedTracks.clear(); followedUsers.clear(); renderAuthUI(); };
     authName.textContent = user.name;
     authName.classList.remove('hidden');
     if (user.profilePicture?.['150x150']) {
@@ -207,6 +215,9 @@ function renderAuthUI() {
       createBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Create a Room';
     }
   }
+
+  // Refresh social buttons for current track (show/hide based on login state)
+  updateSocialButtons(getCurrentTrack());
 }
 
 // ─── HOME VIEW ──────────────────────────────────────────────
@@ -326,10 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const createBtn = document.getElementById('create-room-btn');
   if (createBtn) {
     createBtn.addEventListener('click', async () => {
-      if (!isLoggedIn()) {
-        showToast('Please log in with Audius to create a room');
-        return;
-      }
+      if (!requireLogin('create a room')) return;
       const user = getCurrentUser();
       navigate(`#/room/${user.handle}`);
     });
@@ -455,6 +463,9 @@ async function enterRoom(roomId) {
 
   // Setup player controls
   setupPlayerControls();
+
+  // Setup social action buttons (like, repost, follow)
+  setupSocialButtons();
 
   // Setup mobile tabs
   setupMobileTabs();
@@ -837,6 +848,147 @@ function renderNowPlaying(track) {
     if (artwork) { artwork.src = ''; artwork.classList.add('hidden'); }
     if (title) title.textContent = 'No track playing';
     if (artist) artist.textContent = '';
+  }
+
+  // Update social buttons for current track
+  updateSocialButtons(track);
+}
+
+// ─── SOCIAL ACTIONS (Like / Repost / Follow) ────────────────
+
+function updateSocialButtons(track) {
+  const wrap = document.getElementById('social-actions');
+  const likeBtn = document.getElementById('btn-like');
+  const repostBtn = document.getElementById('btn-repost');
+  const followBtn = document.getElementById('btn-follow');
+
+  if (!wrap || !likeBtn || !repostBtn || !followBtn) return;
+
+  // Show when a track is playing (even for guests — they get a login prompt on click)
+  if (!track) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+
+  // Update liked state
+  const isLiked = likedTracks.has(track.id);
+  likeBtn.classList.toggle('liked', isLiked);
+  likeBtn.innerHTML = isLiked
+    ? '<i class="fa-solid fa-heart"></i>'
+    : '<i class="fa-regular fa-heart"></i>';
+
+  // Update reposted state
+  const isReposted = repostedTracks.has(track.id);
+  repostBtn.classList.toggle('reposted', isReposted);
+
+  // Update followed state
+  const artistId = track.user?.id;
+  const isFollowing = artistId && followedUsers.has(artistId);
+  followBtn.classList.toggle('following', isFollowing);
+  followBtn.innerHTML = isFollowing
+    ? '<i class="fa-solid fa-user-check"></i>'
+    : '<i class="fa-regular fa-user"></i>';
+}
+
+function setupSocialButtons() {
+  const likeBtn = document.getElementById('btn-like');
+  const repostBtn = document.getElementById('btn-repost');
+  const followBtn = document.getElementById('btn-follow');
+
+  if (likeBtn) likeBtn.addEventListener('click', handleLike);
+  if (repostBtn) repostBtn.addEventListener('click', handleRepost);
+  if (followBtn) followBtn.addEventListener('click', handleFollow);
+}
+
+async function handleLike() {
+  if (!requireLogin('favorite this track')) return;
+  const track = getCurrentTrack();
+  const user = getCurrentUser();
+  if (!track || !user) return;
+
+  const btn = document.getElementById('btn-like');
+  if (!btn || btn.classList.contains('loading')) return;
+  btn.classList.add('loading');
+
+  try {
+    const isLiked = likedTracks.has(track.id);
+    if (isLiked) {
+      await unfavoriteTrack(track.id, user.userId);
+      likedTracks.delete(track.id);
+      showToast('Removed from favorites');
+    } else {
+      await favoriteTrack(track.id, user.userId);
+      likedTracks.add(track.id);
+      showToast('Added to favorites on Audius!');
+    }
+    updateSocialButtons(track);
+  } catch (e) {
+    console.warn('Like action failed:', e);
+    showToast('Failed — check your Audius API secret');
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+
+async function handleRepost() {
+  if (!requireLogin('repost this track')) return;
+  const track = getCurrentTrack();
+  const user = getCurrentUser();
+  if (!track || !user) return;
+
+  const btn = document.getElementById('btn-repost');
+  if (!btn || btn.classList.contains('loading')) return;
+  btn.classList.add('loading');
+
+  try {
+    const isReposted = repostedTracks.has(track.id);
+    if (isReposted) {
+      await unrepostTrack(track.id, user.userId);
+      repostedTracks.delete(track.id);
+      showToast('Repost removed');
+    } else {
+      await repostTrack(track.id, user.userId);
+      repostedTracks.add(track.id);
+      showToast('Reposted on Audius!');
+    }
+    updateSocialButtons(track);
+  } catch (e) {
+    console.warn('Repost action failed:', e);
+    showToast('Failed — check your Audius API secret');
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+
+async function handleFollow() {
+  if (!requireLogin('follow this artist')) return;
+  const track = getCurrentTrack();
+  const user = getCurrentUser();
+  if (!track?.user?.id || !user) return;
+
+  const btn = document.getElementById('btn-follow');
+  if (!btn || btn.classList.contains('loading')) return;
+  btn.classList.add('loading');
+
+  const artistId = track.user.id;
+  try {
+    const isFollowing = followedUsers.has(artistId);
+    if (isFollowing) {
+      await unfollowUser(artistId, user.userId);
+      followedUsers.delete(artistId);
+      showToast(`Unfollowed ${track.user.name || track.user.handle}`);
+    } else {
+      await followUser(artistId, user.userId);
+      followedUsers.add(artistId);
+      showToast(`Following ${track.user.name || track.user.handle} on Audius!`);
+    }
+    updateSocialButtons(track);
+  } catch (e) {
+    console.warn('Follow action failed:', e);
+    showToast('Failed — check your Audius API secret');
+  } finally {
+    btn.classList.remove('loading');
   }
 }
 
@@ -1653,6 +1805,7 @@ function setupGifPicker() {
 // ─── SONG REQUESTS ──────────────────────────────────────────
 
 function requestSong(track) {
+  if (!requireLogin('request a song')) return;
   const user = getCurrentUser();
   if (!user) return;
 
@@ -1812,6 +1965,24 @@ function stopAnnouncing() {
 }
 
 // ─── UTILS ──────────────────────────────────────────────────
+
+// Returns true if logged in, otherwise shows login prompt and returns false
+function requireLogin(action) {
+  if (isLoggedIn()) return true;
+  showToast(`Log in with Audius to ${action || 'do that'}`);
+  // Auto-open login popup after a short delay so the toast is visible
+  setTimeout(async () => {
+    try {
+      await loginWithAudius();
+      renderAuthUI();
+    } catch (e) {
+      if (e.message !== 'Login cancelled') {
+        showToast('Login failed: ' + e.message);
+      }
+    }
+  }, 600);
+  return false;
+}
 
 function formatTime(seconds) {
   if (!seconds || isNaN(seconds)) return '0:00';

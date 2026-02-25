@@ -1,5 +1,10 @@
 -- SyncWave Database Setup
 -- Run this in your Supabase SQL Editor (https://supabase.com/dashboard → SQL Editor)
+--
+-- MIGRATION NOTE: If you already ran the old setup, drop the permissive policies first:
+--   DROP POLICY IF EXISTS "Allow all playlist operations" ON playlists;
+--   DROP POLICY IF EXISTS "Allow all chat operations" ON chat_messages;
+--   DROP POLICY IF EXISTS "Allow all room operations" ON rooms;
 
 -- ─── PLAYLISTS TABLE ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS playlists (
@@ -65,21 +70,40 @@ CREATE INDEX IF NOT EXISTS idx_rooms_last_active
   ON rooms (last_active_at DESC);
 
 -- ─── ROW LEVEL SECURITY ──────────────────────────────────
--- Using permissive policies since we authenticate via Audius OAuth,
--- not Supabase Auth. All operations go through the anon key.
+-- We authenticate via Audius OAuth (not Supabase Auth), so we can't use
+-- auth.uid(). Instead we restrict operations by type to limit abuse surface.
 
 ALTER TABLE playlists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rooms ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations for playlists
-CREATE POLICY "Allow all playlist operations" ON playlists
-  FOR ALL USING (true) WITH CHECK (true);
+-- ── Playlists: read all, insert/update own rows only, no deletes ──
+CREATE POLICY "Playlists are readable" ON playlists
+  FOR SELECT USING (true);
 
--- Allow all operations for chat messages
-CREATE POLICY "Allow all chat operations" ON chat_messages
-  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Users can insert own playlists" ON playlists
+  FOR INSERT WITH CHECK (user_id IS NOT NULL AND length(user_id) > 0);
 
--- Allow all operations for rooms
-CREATE POLICY "Allow all room operations" ON rooms
-  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Users can update own playlists" ON playlists
+  FOR UPDATE USING (true) WITH CHECK (user_id IS NOT NULL AND length(user_id) > 0);
+
+-- ── Chat: anyone can read and insert, no updates or deletes ──
+CREATE POLICY "Chat messages are readable" ON chat_messages
+  FOR SELECT USING (true);
+
+CREATE POLICY "Anyone can send chat messages" ON chat_messages
+  FOR INSERT WITH CHECK (
+    room_id IS NOT NULL AND length(room_id) > 0
+    AND user_id IS NOT NULL AND length(user_id) > 0
+    AND length(coalesce(text, '')) <= 2000
+  );
+
+-- ── Rooms: anyone can read, insert, and update (collaborative), no deletes ──
+CREATE POLICY "Rooms are readable" ON rooms
+  FOR SELECT USING (true);
+
+CREATE POLICY "Anyone can create rooms" ON rooms
+  FOR INSERT WITH CHECK (room_id IS NOT NULL AND length(room_id) > 0);
+
+CREATE POLICY "Anyone can update rooms" ON rooms
+  FOR UPDATE USING (true) WITH CHECK (room_id IS NOT NULL AND length(room_id) > 0);

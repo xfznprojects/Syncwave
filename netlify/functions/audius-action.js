@@ -60,13 +60,15 @@ exports.handler = async (event) => {
   const apiPath = actionDef.path({ userId, trackId, targetUserId });
   const url = `${AUDIUS_API_BASE}${apiPath}`;
 
-  // Use Bearer token if available (preferred, rotatable), otherwise fall back to API secret
+  // Auth: Bearer token (preferred) or HTTP Basic Auth with API key + secret
   try {
-    const fetchHeaders = { 'x-api-key': apiKey };
+    const fetchHeaders = {};
     if (bearerToken) {
       fetchHeaders['Authorization'] = `Bearer ${bearerToken}`;
     } else {
-      fetchHeaders['x-api-secret'] = apiSecret;
+      // Audius API uses HTTP Basic Auth: base64(apiKey:apiSecret)
+      const basicCredentials = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+      fetchHeaders['Authorization'] = `Basic ${basicCredentials}`;
     }
 
     const res = await fetch(url, {

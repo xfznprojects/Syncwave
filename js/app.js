@@ -1852,11 +1852,12 @@ function renderListeners(users) {
   `;
   }).join('');
 
-  // Handle avatar errors via JS instead of inline onerror
+  // Apply content-node mirror fallback to each listener avatar;
+  // if all mirrors fail, hide img and show the letter-initial fallback
   container.querySelectorAll('.listener-avatar').forEach(img => {
-    img.addEventListener('error', () => {
-      img.style.display = 'none';
-      const fallback = img.nextElementSibling;
+    setImageWithFallback(img, img.src, (el) => {
+      el.style.display = 'none';
+      const fallback = el.nextElementSibling;
       if (fallback) fallback.style.display = 'flex';
     });
   });

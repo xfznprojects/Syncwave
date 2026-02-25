@@ -55,7 +55,8 @@ const FALLBACK_NODES = [
 ];
 
 // Sets any <img> src with content-node mirror fallback on error.
-export function setImageWithFallback(imgEl, url) {
+// Optional onAllFailed callback fires when all mirrors are exhausted.
+export function setImageWithFallback(imgEl, url, onAllFailed) {
   if (!url) { imgEl.src = ''; return; }
   let mirrorIndex = 0;
   imgEl.src = url;
@@ -69,6 +70,9 @@ export function setImageWithFallback(imgEl, url) {
         return;
       }
     } catch { /* invalid URL */ }
+    // All mirrors exhausted
+    imgEl.onerror = null;
+    if (onAllFailed) onAllFailed(imgEl);
   };
 }
 

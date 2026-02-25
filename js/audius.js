@@ -42,6 +42,8 @@ export async function getUser(userId) {
 // Use setArtworkWithFallback() on <img> elements for mirror retry.
 export function getArtworkUrl(track, size = '480x480') {
   if (!track?.artwork) return null;
+  // artwork can be a plain URL string (from DB) or an object with size keys (from API)
+  if (typeof track.artwork === 'string') return track.artwork;
   return track.artwork[size] || track.artwork['150x150'] || null;
 }
 
@@ -51,11 +53,13 @@ export function setArtworkWithFallback(imgEl, track, size = '480x480') {
     imgEl.src = '';
     return;
   }
-  const primary = track.artwork[size] || track.artwork['150x150'];
-  const mirrors = track.artwork.mirrors || [];
+  const primary = typeof track.artwork === 'string'
+    ? track.artwork
+    : (track.artwork[size] || track.artwork['150x150']);
+  const mirrors = (typeof track.artwork === 'object' && track.artwork.mirrors) || [];
   let mirrorIndex = 0;
 
-  imgEl.src = primary;
+  imgEl.src = primary || '';
   imgEl.onerror = () => {
     if (mirrorIndex < mirrors.length && primary) {
       const url = new URL(primary);

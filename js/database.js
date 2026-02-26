@@ -4,6 +4,17 @@ function getClient() {
   return getSupabaseClient();
 }
 
+// Unwrap double-stringified JSON values (caused by prior JSON.stringify + JSONB column)
+function parseJsonField(value, fallback) {
+  if (value == null) return fallback;
+  let parsed = value;
+  // Unwrap up to 2 layers of stringification
+  for (let i = 0; i < 2 && typeof parsed === 'string'; i++) {
+    try { parsed = JSON.parse(parsed); } catch { return fallback; }
+  }
+  return parsed ?? fallback;
+}
+
 // ─── PLAYLIST PERSISTENCE ─────────────────────────────────
 
 let saveTimeout = null;
@@ -50,7 +61,7 @@ export async function loadPlaylist(userId) {
 
     if (error) throw error;
     if (data?.tracks) {
-      const tracks = typeof data.tracks === 'string' ? JSON.parse(data.tracks) : data.tracks;
+      const tracks = parseJsonField(data.tracks, []);
       return tracks;
     }
   } catch (e) {
@@ -77,10 +88,10 @@ function buildRoomRow(roomData) {
     host_user_id: roomData.hostUserId || null,
     current_track: roomData.currentTrack || null,
     user_count: roomData.userCount || 0,
-    playlist: roomData.playlist ? JSON.stringify(roomData.playlist) : '[]',
-    muted_users: roomData.mutedUsers ? JSON.stringify(roomData.mutedUsers) : '[]',
-    banned_users: roomData.bannedUsers ? JSON.stringify(roomData.bannedUsers) : '[]',
-    playback_state: roomData.playbackState ? JSON.stringify(roomData.playbackState) : null,
+    playlist: roomData.playlist || [],
+    muted_users: roomData.mutedUsers || [],
+    banned_users: roomData.bannedUsers || [],
+    playback_state: roomData.playbackState || null,
     last_active_at: new Date().toISOString(),
   };
 }
@@ -210,7 +221,8 @@ export async function loadRoomPlaylist(roomId) {
 
     if (error) throw error;
     if (data?.playlist) {
-      return typeof data.playlist === 'string' ? JSON.parse(data.playlist) : data.playlist;
+      const pl = parseJsonField(data.playlist, null);
+      return Array.isArray(pl) ? pl : null;
     }
   } catch (e) {
     console.warn('Failed to load room playlist:', e);
@@ -246,7 +258,7 @@ export async function loadRoomBannedUsers(roomId) {
 
     if (error) throw error;
     if (data?.banned_users) {
-      const arr = typeof data.banned_users === 'string' ? JSON.parse(data.banned_users) : data.banned_users;
+      const arr = parseJsonField(data.banned_users, []);
       return Array.isArray(arr) ? arr : [];
     }
   } catch (e) {
@@ -266,7 +278,7 @@ export async function loadRoomMutedUsers(roomId) {
 
     if (error) throw error;
     if (data?.muted_users) {
-      const arr = typeof data.muted_users === 'string' ? JSON.parse(data.muted_users) : data.muted_users;
+      const arr = parseJsonField(data.muted_users, []);
       return Array.isArray(arr) ? arr : [];
     }
   } catch (e) {
@@ -282,13 +294,13 @@ function mapRoomRow(row) {
     hostHandle: row.host_handle,
     hostAvatar: row.host_avatar,
     hostUserId: row.host_user_id,
-    currentTrack: row.current_track,
+    currentTrack: parseJsonField(row.current_track, null),
     userCount: row.user_count,
-    playlist: row.playlist,
-    mutedUsers: row.muted_users,
-    bannedUsers: row.banned_users,
+    playlist: parseJsonField(row.playlist, []),
+    mutedUsers: parseJsonField(row.muted_users, []),
+    bannedUsers: parseJsonField(row.banned_users, []),
     isPermanent: row.is_permanent,
-    playbackState: row.playback_state,
+    playbackState: parseJsonField(row.playback_state, null),
     lastActiveAt: row.last_active_at,
     createdAt: row.created_at,
   };

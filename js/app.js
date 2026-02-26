@@ -50,10 +50,30 @@ let currentRoomIdForChat = null;
 // overwriting saved data with empty arrays during cleanup.
 let isExitingRoom = false;
 
+// Guard: false until the room playlist has been loaded from DB — prevents
+// early persistRoomToDB() calls (from presence events) from overwriting
+// saved playlists with empty arrays.
+let roomReady = false;
+
 // Social action state (per-session cache to avoid redundant API calls)
 const likedTracks = new Set();    // track IDs the user has favorited this session
 const repostedTracks = new Set(); // track IDs the user has reposted this session
 const followedUsers = new Set();  // user IDs the user follows this session
+
+// Strip tracks to essential fields for DB storage (raw API objects are ~5KB each)
+function serializeQueueForDB() {
+  return getQueue().map(t => ({
+    id: t.id,
+    title: t.title,
+    user: t.user ? { name: t.user.name, handle: t.user.handle, id: t.user.id } : null,
+    artwork: t.artwork || null,
+    duration: t.duration || 0,
+    genre: t.genre || '',
+    mood: t.mood || '',
+    tags: t.tags || '',
+    permalink: t.permalink || '',
+  }));
+}
 
 // Visualizer routing — 3D on desktop, 2D on mobile
 let use3D = window.innerWidth > 900;
@@ -347,7 +367,7 @@ async function renderFullDirectory() {
         if (pl.length > 0) {
           let refTime, refIndex = 0, refPosition = 0;
           if (room.playbackState) {
-            const ps = typeof room.playbackState === 'string' ? JSON.parse(room.playbackState) : room.playbackState;
+            const ps = room.playbackState;
             if (ps.savedAt) { refTime = ps.savedAt; refIndex = ps.trackIndex || 0; refPosition = ps.position || 0; }
           }
           if (!refTime) refTime = room.createdAt ? new Date(room.createdAt).getTime() : Date.now();
@@ -602,7 +622,7 @@ async function enterRoom(roomId) {
 
     // Use roomData.playlist (already fetched) if available
     if (roomData?.playlist) {
-      const pl = typeof roomData.playlist === 'string' ? JSON.parse(roomData.playlist) : roomData.playlist;
+      const pl = roomData.playlist;
       if (Array.isArray(pl) && pl.length > 0) roomPlaylist = pl;
     }
 
@@ -629,6 +649,9 @@ async function enterRoom(roomId) {
     // This prevents loading stale playlists from unrelated sessions.
   }
 
+  // Room is fully initialized — allow persistRoomToDB() calls now
+  roomReady = true;
+
   // Host-only: start announcing to lobby
   if (getIsHost() && !isPermanentRoom) {
     startAnnouncing(roomId);
@@ -642,8 +665,7 @@ async function enterRoom(roomId) {
     let refTime, refIndex = 0, refPosition = 0;
 
     if (roomData?.playbackState) {
-      const ps = typeof roomData.playbackState === 'string'
-        ? JSON.parse(roomData.playbackState) : roomData.playbackState;
+      const ps = roomData.playbackState;
       if (ps.savedAt) {
         refTime = ps.savedAt;
         refIndex = ps.trackIndex || 0;
@@ -666,6 +688,7 @@ async function enterRoom(roomId) {
 
 async function exitRoom() {
   isExitingRoom = true;
+  roomReady = false;
 
   const roomId = getRoomId();
   const amHost = getIsHost();
@@ -690,7 +713,7 @@ async function exitRoom() {
       hostUserId: user?.userId || null,
       userCount: Math.max(0, users.length - 1), // we're leaving
       currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
-      playlist: getQueue(),
+      playlist: serializeQueueForDB(),
       mutedUsers: Array.from(mutedUsers),
       bannedUsers: Array.from(bannedUsers),
       playbackState: track ? {
@@ -865,8 +888,36 @@ function setupUrlInput() {
         return;
       }
 
+      // User profile: has handle + track_count
+      if (result.handle && result.track_count != null) {
+        urlStatus.textContent = `Loading ${result.track_count} tracks from ${result.name || result.handle}...`;
+        urlStatus.className = 'url-status';
+        // Paginate through all tracks (API max 100 per request)
+        let allTracks = [];
+        let offset = 0;
+        const pageSize = 100;
+        while (true) {
+          const batch = await getUserTracks(result.id, pageSize, offset);
+          if (!batch || batch.length === 0) break;
+          allTracks = allTracks.concat(batch);
+          if (batch.length < pageSize) break;
+          offset += pageSize;
+        }
+        if (allTracks.length === 0) {
+          urlStatus.textContent = `${result.name || result.handle} has no tracks`;
+          urlStatus.className = 'url-status error';
+          return;
+        }
+        let added = 0;
+        for (const track of allTracks) {
+          if (track && track.id) { addToQueue(track); added++; }
+        }
+        urlStatus.textContent = `Added ${added} tracks from ${result.name || result.handle}`;
+        urlStatus.className = 'url-status success';
+        urlInput.value = '';
+        showToast(`Added ${added} tracks from ${result.name || result.handle}`);
       // Playlist: has playlist_name and tracks array
-      if (result.playlist_name) {
+      } else if (result.playlist_name) {
         const tracks = result.tracks && result.tracks.length > 0
           ? result.tracks
           : await getPlaylistTracks(result.id);
@@ -2284,7 +2335,7 @@ function startAnnouncing(roomId) {
 // Save current room state to database — called on meaningful changes only
 function persistRoomToDB() {
   const roomId = getRoomId();
-  if (!roomId || !getIsHost()) return;
+  if (!roomId || !getIsHost() || !roomReady) return;
   const user = getCurrentUser();
   const track = getCurrentTrack();
   const users = getUsers();
@@ -2297,7 +2348,7 @@ function persistRoomToDB() {
     hostUserId: user?.userId || null,
     userCount: users.length,
     currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
-    playlist: getQueue(),
+    playlist: serializeQueueForDB(),
     mutedUsers: Array.from(mutedUsers),
     bannedUsers: Array.from(bannedUsers),
     playbackState: track ? {
@@ -2315,8 +2366,7 @@ function persistRoomToDB() {
 async function restorePlaybackState(roomData) {
   if (!roomData?.playbackState) return false;
 
-  const ps = typeof roomData.playbackState === 'string'
-    ? JSON.parse(roomData.playbackState) : roomData.playbackState;
+  const ps = roomData.playbackState;
 
   if (ps.trackIndex == null || ps.savedAt == null) return false;
 
@@ -2476,7 +2526,7 @@ function shakeInput(el) {
 // Flush room state to DB (reusable for beforeunload + visibilitychange)
 function flushRoomState() {
   const roomId = getRoomId();
-  if (!roomId || !getIsHost()) return;
+  if (!roomId || !getIsHost() || !roomReady) return;
   const user = getCurrentUser();
   const track = getCurrentTrack();
   const users = getUsers();
@@ -2489,7 +2539,7 @@ function flushRoomState() {
     hostUserId: user?.userId || null,
     userCount: users.length,
     currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
-    playlist: getQueue(),
+    playlist: serializeQueueForDB(),
     mutedUsers: Array.from(mutedUsers),
     bannedUsers: Array.from(bannedUsers),
     playbackState: track ? {

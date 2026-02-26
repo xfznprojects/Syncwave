@@ -1,7 +1,28 @@
 /**
  * SyncWave — Genre/Mood → Visualizer Parameter Mapping
  * Maps Audius track metadata (genre, mood, tags) to 3D visualizer parameters.
+ * Uses hue ranges instead of static palettes for dynamic, breathing colors.
  */
+
+// ─── HSL UTILITIES ──────────────────────────────────────
+
+export function hslToRGB(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return [f(0), f(8), f(4)];
+}
+
+export function hslToRGB255(h, s, l) {
+  const [r, g, b] = hslToRGB(h, s, l);
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+export function hslToHex(h, s, l) {
+  const [r, g, b] = hslToRGB255(h, s, l);
+  return (r << 16) | (g << 8) | b;
+}
 
 // ─── GENRE ENERGY SCORES (0 = calm, 1 = intense) ────────
 
@@ -100,67 +121,172 @@ const MOOD_DARKNESS = {
 const HIGH_ENERGY_TAGS = ['bass', 'rave', 'festival', 'heavy', 'hard', 'drop', 'banger', 'hype', 'intense'];
 const LOW_ENERGY_TAGS = ['chill', 'lofi', 'lo-fi', 'relax', 'calm', 'sleep', 'meditation', 'soft', 'mellow'];
 
-// ─── COLOR PALETTES ──────────────────────────────────────
+// ─── HUE RANGE PALETTES ─────────────────────────────────
+// Each mood maps to a hue range the colors can drift within.
+// hueCenter: the central hue (degrees)
+// hueSpread: ±drift range (so total range = hueCenter ± hueSpread/2)
+// saturation: [min, max] percent
+// lightness: [min, max] percent
+// driftSpeed: how fast colors wander over time (higher = faster)
+// audioHueShift: how much audio energy shifts the hue (degrees)
 
-const PALETTES = {
-  // Calm & Light: soft teal / sky blue
+const HUE_RANGES = {
+  // Calm & Light: soft teal / sky blue — slow, gentle drift
   calmLight: {
-    primary:   [0.0, 0.75, 0.9],
-    secondary: [0.5, 0.8, 1.0],
-    pointLight1: 0x40c0d0,
-    pointLight2: 0x80b0ff,
-    rings: [[100, 200, 220], [130, 180, 255], [180, 220, 255]],
+    hueCenter: 180,
+    hueSpread: 60,
+    saturation: [60, 80],
+    lightness: [50, 70],
+    driftSpeed: 0.3,
+    audioHueShift: 20,
   },
-  // Calm & Dark: deep purple / indigo
+  // Calm & Dark: deep indigo / navy
   calmDark: {
-    primary:   [0.3, 0.1, 0.6],
-    secondary: [0.15, 0.05, 0.4],
-    pointLight1: 0x5020a0,
-    pointLight2: 0x300880,
-    rings: [[80, 30, 160], [50, 15, 120], [130, 60, 200]],
+    hueCenter: 250,
+    hueSpread: 50,
+    saturation: [50, 75],
+    lightness: [25, 45],
+    driftSpeed: 0.2,
+    audioHueShift: 15,
   },
-  // Medium & Light: cyan / magenta (current default)
+  // Medium-low & Light: ocean green / seafoam
+  mediumLowLight: {
+    hueCenter: 155,
+    hueSpread: 60,
+    saturation: [65, 85],
+    lightness: [45, 65],
+    driftSpeed: 0.4,
+    audioHueShift: 30,
+  },
+  // Medium-low & Dark: forest green / dark emerald
+  mediumLowDark: {
+    hueCenter: 160,
+    hueSpread: 50,
+    saturation: [55, 75],
+    lightness: [25, 42],
+    driftSpeed: 0.35,
+    audioHueShift: 25,
+  },
+  // Medium & Light: cyan / electric blue
   mediumLight: {
-    primary:   [0.0, 0.94, 1.0],
-    secondary: [1.0, 0.0, 0.67],
-    pointLight1: 0x00f0ff,
-    pointLight2: 0xff00aa,
-    rings: [[0, 240, 255], [180, 74, 255], [255, 0, 170]],
+    hueCenter: 195,
+    hueSpread: 80,
+    saturation: [70, 95],
+    lightness: [45, 65],
+    driftSpeed: 0.5,
+    audioHueShift: 40,
   },
-  // Medium & Dark: dark teal / deep rose
+  // Medium & Dark: teal / deep blue
   mediumDark: {
-    primary:   [0.0, 0.6, 0.7],
-    secondary: [0.7, 0.0, 0.4],
-    pointLight1: 0x009ab0,
-    pointLight2: 0xb00066,
-    rings: [[0, 154, 176], [100, 40, 150], [176, 0, 102]],
+    hueCenter: 210,
+    hueSpread: 70,
+    saturation: [60, 85],
+    lightness: [28, 48],
+    driftSpeed: 0.4,
+    audioHueShift: 35,
   },
-  // High & Light: hot orange / pink / gold
+  // Medium-high & Light: gold / amber / warm
+  mediumHighLight: {
+    hueCenter: 40,
+    hueSpread: 50,
+    saturation: [75, 95],
+    lightness: [50, 68],
+    driftSpeed: 0.6,
+    audioHueShift: 45,
+  },
+  // Medium-high & Dark: burnt orange / copper
+  mediumHighDark: {
+    hueCenter: 25,
+    hueSpread: 45,
+    saturation: [65, 85],
+    lightness: [28, 45],
+    driftSpeed: 0.55,
+    audioHueShift: 40,
+  },
+  // High & Light: hot magenta / neon pink
   highLight: {
-    primary:   [1.0, 0.3, 0.0],
-    secondary: [1.0, 0.0, 0.4],
-    pointLight1: 0xff4c00,
-    pointLight2: 0xff0066,
-    rings: [[255, 76, 0], [255, 0, 102], [255, 200, 0]],
+    hueCenter: 330,
+    hueSpread: 70,
+    saturation: [80, 100],
+    lightness: [50, 70],
+    driftSpeed: 0.8,
+    audioHueShift: 60,
   },
-  // High & Dark: deep red / dark crimson
+  // High & Dark: deep red / crimson
   highDark: {
-    primary:   [0.8, 0.0, 0.0],
-    secondary: [0.5, 0.0, 0.2],
-    pointLight1: 0xcc0000,
-    pointLight2: 0x800033,
-    rings: [[204, 0, 0], [128, 0, 51], [255, 50, 0]],
+    hueCenter: 0,
+    hueSpread: 60,
+    saturation: [70, 95],
+    lightness: [25, 45],
+    driftSpeed: 0.7,
+    audioHueShift: 50,
   },
 };
 
-function pickPalette(energy, darkness) {
-  if (energy < 0.35) {
-    return darkness > 0.45 ? PALETTES.calmDark : PALETTES.calmLight;
-  } else if (energy < 0.7) {
-    return darkness > 0.45 ? PALETTES.mediumDark : PALETTES.mediumLight;
+function pickHueRange(energy, darkness) {
+  const dark = darkness > 0.45;
+  if (energy < 0.3) {
+    return dark ? HUE_RANGES.calmDark : HUE_RANGES.calmLight;
+  } else if (energy < 0.5) {
+    return dark ? HUE_RANGES.mediumLowDark : HUE_RANGES.mediumLowLight;
+  } else if (energy < 0.65) {
+    return dark ? HUE_RANGES.mediumDark : HUE_RANGES.mediumLight;
+  } else if (energy < 0.8) {
+    return dark ? HUE_RANGES.mediumHighDark : HUE_RANGES.mediumHighLight;
   } else {
-    return darkness > 0.45 ? PALETTES.highDark : PALETTES.highLight;
+    return dark ? HUE_RANGES.highDark : HUE_RANGES.highLight;
   }
+}
+
+// Generate a backward-compatible static palette snapshot from a hue range
+function hueRangeToPalette(range) {
+  const h = range.hueCenter;
+  const s = (range.saturation[0] + range.saturation[1]) / 2;
+  const l = (range.lightness[0] + range.lightness[1]) / 2;
+  return {
+    primary: hslToRGB(h, s, l),
+    secondary: hslToRGB(h + 40, s * 0.9, l * 0.85),
+    pointLight1: hslToHex(h, s, l + 5),
+    pointLight2: hslToHex(h + 60, s * 0.8, l - 5),
+    rings: [
+      hslToRGB255(h - 20, s, l),
+      hslToRGB255(h, s * 0.9, l * 0.9),
+      hslToRGB255(h + 30, s, l),
+    ],
+  };
+}
+
+// ─── REAL-TIME HUE COMPUTATION ──────────────────────────
+
+/**
+ * Compute the current hue for the visualizer based on time, audio level, and frequency balance.
+ * Called each frame from visualizer3d.js.
+ * @param {object} hueRange - The hue range object from computeVisualizerParams
+ * @param {number} time - Elapsed time in seconds
+ * @param {number} audioLevel - Current audio energy (0-1)
+ * @param {number} bassRatio - Bass-to-total frequency ratio (0-1, typically ~0.3-0.7)
+ * @returns {number} hue in degrees (0-360)
+ */
+export function computeCurrentHue(hueRange, time, audioLevel, bassRatio) {
+  if (!hueRange) return 200; // default blue
+
+  const drift = Math.sin(time * hueRange.driftSpeed) * hueRange.hueSpread * 0.5;
+  const audioShift = (audioLevel - 0.3) * hueRange.audioHueShift;
+  const freqShift = (bassRatio - 0.5) * 30;
+
+  return (hueRange.hueCenter + drift + audioShift + freqShift + 360) % 360;
+}
+
+/**
+ * Get the interpolated saturation and lightness from the hue range based on audio level.
+ * Higher audio → higher saturation, slightly higher lightness.
+ */
+export function computeCurrentSL(hueRange, audioLevel) {
+  if (!hueRange) return { s: 75, l: 50 };
+  const t = Math.min(1, audioLevel * 1.2);
+  const s = hueRange.saturation[0] + t * (hueRange.saturation[1] - hueRange.saturation[0]);
+  const l = hueRange.lightness[0] + t * (hueRange.lightness[1] - hueRange.lightness[0]);
+  return { s, l };
 }
 
 // ─── MAIN ALGORITHM ──────────────────────────────────────
@@ -189,13 +315,17 @@ export function computeVisualizerParams(genre, mood, tags) {
   energy = Math.max(0, Math.min(1, energy));
   darkness = Math.max(0, Math.min(1, darkness));
 
-  // 5. Map to visualizer parameters
+  // 5. Pick hue range and generate backward-compatible palette
+  const hueRange = pickHueRange(energy, darkness);
+
+  // 6. Map to visualizer parameters
   return {
     distortion: 0.3 + energy * 2.2,
     rotationSpeed: 0.3 + energy * 2.2,
     audioBoost: 0.8 + energy * 2.2,
     audioReactivity: 0.5 + energy * 2.0,
     ringReactivity: 0.3 + energy * 0.9,
-    palette: pickPalette(energy, darkness),
+    palette: hueRangeToPalette(hueRange),
+    hueRange,
   };
 }

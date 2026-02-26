@@ -164,7 +164,7 @@ function drawChannel(data, startSample, visibleSamples, sliceWidth, w, halfH, di
 
 function getDominantHue(freqData) {
   // Find the dominant frequency bin and map to hue
-  // Low freq → warm (red/orange ~0-40), mid → green/cyan (~120-180), high → blue/magenta (~240-300)
+  // Low freq → warm amber (~30), mid → green/teal (~140), high → blue/violet (~260)
   let maxVal = 0;
   let maxIdx = 0;
   const len = Math.min(freqData.length, 512); // focus on lower half
@@ -176,9 +176,9 @@ function getDominantHue(freqData) {
     }
   }
 
-  // Map bin index to hue: low bins → cyan (180), high bins → magenta (320)
+  // Map bin index to hue: low bins → warm amber (30), high bins → blue-violet (260)
   const ratio = maxIdx / len;
-  return 180 + ratio * 140;
+  return 30 + ratio * 230;
 }
 
 function drawGrid(w, h) {

@@ -1497,6 +1497,8 @@ function saveAccordionState(state) {
   try { localStorage.setItem(ACCORDION_STORAGE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
 }
 
+let accordionsInitialized = false;
+
 function setupAccordions() {
   const state = loadAccordionState();
 
@@ -1513,6 +1515,10 @@ function setupAccordions() {
       header.classList.add('collapsed');
     }
   }
+
+  // Only attach click listeners once — enterRoom() calls this on every entry
+  if (accordionsInitialized) return;
+  accordionsInitialized = true;
 
   document.querySelectorAll('.accordion-header').forEach(header => {
     header.addEventListener('click', (e) => {

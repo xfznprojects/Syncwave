@@ -85,7 +85,7 @@ function drawBars(analyser, dataArray, bufferLength, w, h) {
     const value = dataArray[i] / 255;
     const barHeight = value * h * 0.85;
 
-    const hue = 180 + (i / barCount) * 140; // cyan → magenta gradient
+    const hue = (200 + (i / barCount) * 260) % 360; // full spectrum gradient
     const lightness = 40 + value * 30;
 
     ctx.fillStyle = `hsla(${hue}, 90%, ${lightness}%, 0.9)`;
@@ -96,7 +96,7 @@ function drawBars(analyser, dataArray, bufferLength, w, h) {
       barHeight
     );
 
-    // Reflection
+    // Reflection (uses same hue from above)
     ctx.fillStyle = `hsla(${hue}, 90%, ${lightness}%, 0.15)`;
     ctx.fillRect(
       i * barWidth + gap / 2,
@@ -164,7 +164,7 @@ function drawCircular(analyser, dataArray, bufferLength, w, h) {
     const x2 = cx + Math.cos(angle) * (radius + barLength);
     const y2 = cy + Math.sin(angle) * (radius + barLength);
 
-    const hue = 180 + (i / barCount) * 140; // cyan → magenta
+    const hue = (200 + (i / barCount) * 260) % 360; // full spectrum
     ctx.lineWidth = 3;
     ctx.strokeStyle = `hsla(${hue}, 90%, ${50 + value * 30}%, 0.8)`;
     ctx.beginPath();

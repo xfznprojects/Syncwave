@@ -21,6 +21,26 @@ let circularCanvas = null;
 let circularCtx = null;
 let resizeHandler = null;
 let resizeObserver = null;
+let pointLight1 = null;
+let pointLight2 = null;
+
+// ─── MOOD-ADAPTIVE PARAMETERS ────────────────────────────
+// Target values (set by setVisualizerMood) and current values (lerped each frame)
+const MOOD_DEFAULTS = {
+  distortion: 1.0,
+  rotationSpeed: 1.0,
+  audioBoost: 1.8,
+  audioReactivity: 1.5,
+  ringReactivity: 1.0,
+  palette: null, // null = use hardcoded defaults
+};
+let moodTarget = { ...MOOD_DEFAULTS };
+let moodCurrent = { ...MOOD_DEFAULTS };
+const MOOD_LERP_SPEED = 0.02; // ~2-3 seconds to reach target at 60fps
+
+// Cached target colors (avoid allocating THREE.Color every frame)
+let targetPL1Color = null;
+let targetPL2Color = null;
 
 // Performance: detect low-end hardware
 const isLowEnd = navigator.hardwareConcurrency <= 4 || /mobile|android/i.test(navigator.userAgent);
@@ -114,6 +134,50 @@ export function destroyVisualizer3D() {
   clock = null;
   container = null;
   frequencyData = null;
+  pointLight1 = null;
+  pointLight2 = null;
+  targetPL1Color = null;
+  targetPL2Color = null;
+  moodTarget = { ...MOOD_DEFAULTS };
+  moodCurrent = { ...MOOD_DEFAULTS };
+}
+
+export function setVisualizerMood(params) {
+  if (!params) return;
+  moodTarget.distortion = params.distortion ?? 1.0;
+  moodTarget.rotationSpeed = params.rotationSpeed ?? 1.0;
+  moodTarget.audioBoost = params.audioBoost ?? 1.8;
+  moodTarget.audioReactivity = params.audioReactivity ?? 1.5;
+  moodTarget.ringReactivity = params.ringReactivity ?? 1.0;
+  moodTarget.palette = params.palette ?? null;
+}
+
+function lerpMood() {
+  const s = MOOD_LERP_SPEED;
+  moodCurrent.distortion += (moodTarget.distortion - moodCurrent.distortion) * s;
+  moodCurrent.rotationSpeed += (moodTarget.rotationSpeed - moodCurrent.rotationSpeed) * s;
+  moodCurrent.audioBoost += (moodTarget.audioBoost - moodCurrent.audioBoost) * s;
+  moodCurrent.audioReactivity += (moodTarget.audioReactivity - moodCurrent.audioReactivity) * s;
+  moodCurrent.ringReactivity += (moodTarget.ringReactivity - moodCurrent.ringReactivity) * s;
+
+  // Palette color lerping (RGB components)
+  if (moodTarget.palette && !moodCurrent.palette) {
+    // First palette assignment — snap immediately
+    moodCurrent.palette = JSON.parse(JSON.stringify(moodTarget.palette));
+  } else if (moodTarget.palette && moodCurrent.palette) {
+    for (let c = 0; c < 3; c++) {
+      moodCurrent.palette.primary[c] += (moodTarget.palette.primary[c] - moodCurrent.palette.primary[c]) * s;
+      moodCurrent.palette.secondary[c] += (moodTarget.palette.secondary[c] - moodCurrent.palette.secondary[c]) * s;
+    }
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        moodCurrent.palette.rings[r][c] += (moodTarget.palette.rings[r][c] - moodCurrent.palette.rings[r][c]) * s;
+      }
+    }
+    // Point light hex values are handled via THREE.Color.lerp in animate()
+    moodCurrent.palette.pointLight1 = moodTarget.palette.pointLight1;
+    moodCurrent.palette.pointLight2 = moodTarget.palette.pointLight2;
+  }
 }
 
 // ─── THREE.JS SCENE ──────────────────────────────────────
@@ -158,13 +222,13 @@ function initThreeJS() {
   dl.position.set(1, 1, 1);
   scene.add(dl);
 
-  const pl1 = new THREE.PointLight(0x00f0ff, 1, 12); // cyan
-  pl1.position.set(3, 2, 2);
-  scene.add(pl1);
+  pointLight1 = new THREE.PointLight(0x00f0ff, 1, 12); // cyan
+  pointLight1.position.set(3, 2, 2);
+  scene.add(pointLight1);
 
-  const pl2 = new THREE.PointLight(0xff00aa, 0.8, 12); // magenta
-  pl2.position.set(-3, -2, -2);
-  scene.add(pl2);
+  pointLight2 = new THREE.PointLight(0xff00aa, 0.8, 12); // magenta
+  pointLight2.position.set(-3, -2, -2);
+  scene.add(pointLight2);
 
   // Create objects
   updateGlow = createAnomalyObject();
@@ -205,6 +269,7 @@ function createAnomalyObject() {
     uniforms: {
       time: { value: 0 },
       color: { value: new THREE.Color(0x00f0ff) },
+      secondaryColor: { value: new THREE.Color(0xff00aa) },
       audioLevel: { value: 0 },
       distortion: { value: 1.0 },
     },
@@ -277,6 +342,7 @@ function createAnomalyObject() {
     fragmentShader: `
       uniform float time;
       uniform vec3 color;
+      uniform vec3 secondaryColor;
       uniform float audioLevel;
       varying vec3 vNormal;
       varying vec3 vPosition;
@@ -287,10 +353,8 @@ function createAnomalyObject() {
         fresnel = pow(fresnel, 2.0 + audioLevel * 2.0);
         float pulse = 0.8 + 0.2 * sin(time * 2.0);
 
-        // Blend cyan → magenta based on audio
-        vec3 cyan = vec3(0.0, 0.94, 1.0);
-        vec3 magenta = vec3(1.0, 0.0, 0.67);
-        vec3 baseColor = mix(cyan, magenta, audioLevel * 0.7 + 0.15);
+        // Blend primary → secondary based on audio
+        vec3 baseColor = mix(color, secondaryColor, audioLevel * 0.7 + 0.15);
 
         vec3 finalColor = baseColor * fresnel * pulse * (1.0 + audioLevel * 0.8);
         float alpha = fresnel * (0.7 - audioLevel * 0.2);
@@ -310,6 +374,7 @@ function createAnomalyObject() {
     uniforms: {
       time: { value: 0 },
       color: { value: new THREE.Color(0x00f0ff) },
+      secondaryColor: { value: new THREE.Color(0xff00aa) },
       audioLevel: { value: 0 },
     },
     vertexShader: `
@@ -326,6 +391,7 @@ function createAnomalyObject() {
       varying vec3 vNormal;
       varying vec3 vPosition;
       uniform vec3 color;
+      uniform vec3 secondaryColor;
       uniform float time;
       uniform float audioLevel;
       void main() {
@@ -335,9 +401,7 @@ function createAnomalyObject() {
         float pulse = 0.5 + 0.5 * sin(time * 2.0);
         float af = 1.0 + audioLevel * 3.0;
 
-        vec3 cyan = vec3(0.0, 0.94, 1.0);
-        vec3 magenta = vec3(1.0, 0.0, 0.67);
-        vec3 glowColor = mix(cyan, magenta, 0.3 + audioLevel * 0.4);
+        vec3 glowColor = mix(color, secondaryColor, 0.3 + audioLevel * 0.4);
 
         vec3 finalColor = glowColor * fresnel * (0.8 + 0.2 * pulse) * af;
         float alpha = fresnel * (0.3 * af) * (1.0 - audioLevel * 0.2);
@@ -356,8 +420,18 @@ function createAnomalyObject() {
   return function update(time, audioLevel) {
     outerMat.uniforms.time.value = time;
     outerMat.uniforms.audioLevel.value = audioLevel;
+    outerMat.uniforms.distortion.value = moodCurrent.distortion;
     glowMat.uniforms.time.value = time;
     glowMat.uniforms.audioLevel.value = audioLevel;
+
+    // Update shader colors from mood palette
+    if (moodCurrent.palette) {
+      const p = moodCurrent.palette;
+      outerMat.uniforms.color.value.setRGB(p.primary[0], p.primary[1], p.primary[2]);
+      outerMat.uniforms.secondaryColor.value.setRGB(p.secondary[0], p.secondary[1], p.secondary[2]);
+      glowMat.uniforms.color.value.setRGB(p.primary[0], p.primary[1], p.primary[2]);
+      glowMat.uniforms.secondaryColor.value.setRGB(p.secondary[0], p.secondary[1], p.secondary[2]);
+    }
   };
 }
 
@@ -458,17 +532,19 @@ function drawCircularVisualizer(freqData) {
   const baseRadius = Math.min(w, h) * 0.22;
   const binCount = freqData.length;
 
-  // Soft glow base
+  // Soft glow base (mood-aware color)
+  const gc = (moodCurrent.palette?.rings[0]) || [0, 240, 255];
   circularCtx.beginPath();
   circularCtx.arc(cx, cy, baseRadius * 1.1, 0, Math.PI * 2);
-  circularCtx.fillStyle = 'rgba(0, 240, 255, 0.03)';
+  circularCtx.fillStyle = `rgba(${Math.round(gc[0])}, ${Math.round(gc[1])}, ${Math.round(gc[2])}, 0.03)`;
   circularCtx.fill();
 
-  // 3 concentric rings reacting to different frequency bands
+  // 3 concentric rings reacting to different frequency bands (mood-aware colors)
+  const rc = moodCurrent.palette ? moodCurrent.palette.rings : [[0, 240, 255], [180, 74, 255], [255, 0, 170]];
   const rings = [
-    { radiusMul: 0.7, color1: [0, 240, 255], color2: [0, 180, 220] },   // cyan — lows
-    { radiusMul: 0.85, color1: [180, 74, 255], color2: [140, 50, 200] }, // purple — mids
-    { radiusMul: 1.0, color1: [255, 0, 170], color2: [200, 0, 130] },    // magenta — highs
+    { radiusMul: 0.7, color1: rc[0], color2: rc[0].map(c => Math.round(c * 0.75)) },
+    { radiusMul: 0.85, color1: rc[1], color2: rc[1].map(c => Math.round(c * 0.75)) },
+    { radiusMul: 1.0, color1: rc[2], color2: rc[2].map(c => Math.round(c * 0.75)) },
   ];
 
   for (let r = 0; r < rings.length; r++) {
@@ -488,7 +564,7 @@ function drawCircularVisualizer(freqData) {
         sum += freqData[freqStart + ((i * segSize + j) % freqRange)];
       }
       const value = sum / (segSize * 255);
-      const dynRadius = ringRadius * (1 + value * 0.6);
+      const dynRadius = ringRadius * (1 + value * 0.6 * moodCurrent.ringReactivity);
       const angle = (i / numPoints) * Math.PI * 2;
       const x = cx + Math.cos(angle) * dynRadius;
       const y = cy + Math.sin(angle) * dynRadius;
@@ -516,10 +592,11 @@ function animate() {
 
   if (!renderer || !scene || !camera) return;
 
+  lerpMood();
   controls.update();
   const time = clock.getElapsedTime();
 
-  // Get audio level from our analyser
+  // Get audio level from our analyser (mood-aware boost)
   let audioLevel = 0;
   const analyser = getAnalyser();
   if (analyser) {
@@ -530,7 +607,7 @@ function animate() {
 
     let sum = 0;
     for (let i = 0; i < frequencyData.length; i++) sum += frequencyData[i];
-    audioLevel = Math.min(1.0, (sum / frequencyData.length / 255) * 1.8);
+    audioLevel = Math.min(1.0, (sum / frequencyData.length / 255) * moodCurrent.audioBoost);
 
     drawCircularVisualizer(frequencyData);
   }
@@ -539,11 +616,21 @@ function animate() {
   if (updateGlow) updateGlow(time, audioLevel);
   if (updateParticles) updateParticles(time);
 
-  // Rotate anomaly
+  // Rotate anomaly (mood-aware speed and reactivity)
   if (anomalyGroup) {
-    const rotFactor = 1 + audioLevel * 1.5;
-    anomalyGroup.rotation.y += 0.004 * rotFactor;
-    anomalyGroup.rotation.z += 0.002 * rotFactor;
+    const rotFactor = 1 + audioLevel * moodCurrent.audioReactivity;
+    anomalyGroup.rotation.y += 0.004 * moodCurrent.rotationSpeed * rotFactor;
+    anomalyGroup.rotation.z += 0.002 * moodCurrent.rotationSpeed * rotFactor;
+  }
+
+  // Lerp point light colors toward mood palette
+  if (moodCurrent.palette && pointLight1 && pointLight2 && THREE) {
+    if (!targetPL1Color) targetPL1Color = new THREE.Color();
+    if (!targetPL2Color) targetPL2Color = new THREE.Color();
+    targetPL1Color.set(moodCurrent.palette.pointLight1);
+    targetPL2Color.set(moodCurrent.palette.pointLight2);
+    pointLight1.color.lerp(targetPL1Color, MOOD_LERP_SPEED);
+    pointLight2.color.lerp(targetPL2Color, MOOD_LERP_SPEED);
   }
 
   renderer.render(scene, camera);

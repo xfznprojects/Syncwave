@@ -564,6 +564,8 @@ function serializeTrack(track) {
     artwork: track.artwork || null,
     duration: track.duration || 0,
     genre: track.genre || '',
+    mood: track.mood || '',
+    tags: track.tags || '',
   };
 }
 

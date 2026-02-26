@@ -18,7 +18,8 @@ import {
   startDeterministicSync, stopDeterministicSync, calculateDeterministicPosition,
 } from './player.js';
 import { initVisualizer, startVisualizer as startVis2D, stopVisualizer as stopVis2D, cycleMode, getMode, destroy as destroyVis2D } from './visualizer.js';
-import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D } from './visualizer3d.js';
+import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D, setVisualizerMood } from './visualizer3d.js';
+import { computeVisualizerParams } from './visualizer-mood.js';
 import {
   initChat, sendMessage, sendGif, handleIncomingMessage, clearChat,
   searchGifs, getTrendingGifs, getTrendingTerms, renderGifPicker, setupGifSearch,
@@ -154,6 +155,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     startVisualizer();
     startWaveform();
     startAnalysis();
+    // Apply genre/mood-based visualizer adaptation
+    if (use3D && track) {
+      const params = computeVisualizerParams(track.genre, track.mood, track.tags);
+      setVisualizerMood(params);
+    }
     // Re-render queue to update highlight on active track
     renderQueue(getQueue(), getCurrentIndex());
     // Persist room to DB on track change (host persists full state)
@@ -193,7 +199,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   handleRoute();
 });
 
-function handleRoute() {
+async function handleRoute() {
   const route = getRoute();
   const homeView = document.getElementById('home-view');
   const roomView = document.getElementById('room-view');
@@ -205,7 +211,7 @@ function handleRoute() {
   } else {
     roomView.classList.add('hidden');
     homeView.classList.remove('hidden');
-    exitRoom();
+    await exitRoom();
     // Refresh room directory from DB when returning to home
     renderFullDirectory();
   }
@@ -619,16 +625,8 @@ async function enterRoom(roomId) {
       // Non-host playback is handled by deterministic sync below
     }
 
-    // Host-only fallback: user's personal playlist (if room had nothing saved)
-    if (getQueue().length === 0 && getIsHost() && user) {
-      try {
-        const saved = await dbLoadPlaylist(user.userId);
-        if (saved && saved.length > 0) {
-          loadQueueFromData(saved, false);
-          showToast(`Restored ${saved.length} tracks from last session`);
-        }
-      } catch { /* ignore */ }
-    }
+    // No personal playlist fallback — room starts fresh if no room playlist exists.
+    // This prevents loading stale playlists from unrelated sessions.
   }
 
   // Host-only: start announcing to lobby
@@ -666,23 +664,25 @@ async function enterRoom(roomId) {
   renderRequests();
 }
 
-function exitRoom() {
+async function exitRoom() {
   isExitingRoom = true;
 
-  // Update listener count for ALL users before leaving (so 24/7 rooms decrement correctly)
   const roomId = getRoomId();
-  if (roomId) {
-    const users = getUsers();
-    dbUpdateRoomUserCount(roomId, Math.max(0, users.length - 1));
+  const amHost = getIsHost();
+
+  // For non-hosts: update listener count before leaving (so 24/7 rooms decrement correctly)
+  // For hosts: dbSaveRoomImmediate below already includes the decremented user_count
+  if (roomId && !amHost) {
+    await dbUpdateRoomUserCount(roomId, Math.max(0, getUsers().length - 1));
   }
 
-  // Persist full room state for host
-  if (roomId && getIsHost()) {
+  // Persist full room state for host — AWAIT to ensure save completes before cleanup
+  if (roomId && amHost) {
     const user = getCurrentUser();
     const track = getCurrentTrack();
     const users = getUsers();
     const audio = getAudioElement();
-    dbSaveRoomImmediate({
+    await dbSaveRoomImmediate({
       roomId,
       hostName: user?.name || roomId,
       hostHandle: user?.handle || roomId,
@@ -1361,14 +1361,18 @@ function setupPlayerControls() {
     });
   }
 
-  // Volume
-  let savedVolume = 0.8;
+  // Volume — restore from localStorage or slider's current value
+  const storedVol = parseFloat(localStorage.getItem('syncwave_volume'));
+  let savedVolume = !isNaN(storedVol) ? storedVol : 0.8;
   if (volumeSlider) {
-    setVolume(0.8);
+    volumeSlider.value = Math.round(savedVolume * 100);
+    setVolume(savedVolume);
+    if (muteBtn) muteBtn.innerHTML = savedVolume === 0 ? '<i class="fa-solid fa-volume-xmark"></i>' : savedVolume < 0.5 ? '<i class="fa-solid fa-volume-low"></i>' : '<i class="fa-solid fa-volume-high"></i>';
     volumeSlider.oninput = () => {
       const vol = parseInt(volumeSlider.value) / 100;
       setVolume(vol);
       savedVolume = vol;
+      localStorage.setItem('syncwave_volume', vol);
       if (muteBtn) muteBtn.innerHTML = vol === 0 ? '<i class="fa-solid fa-volume-xmark"></i>' : vol < 0.5 ? '<i class="fa-solid fa-volume-low"></i>' : '<i class="fa-solid fa-volume-high"></i>';
     };
   }
@@ -1384,6 +1388,7 @@ function setupPlayerControls() {
       } else {
         setVolume(savedVolume || 0.8);
         if (volumeSlider) volumeSlider.value = Math.round((savedVolume || 0.8) * 100);
+        localStorage.setItem('syncwave_volume', savedVolume || 0.8);
         muteBtn.innerHTML = savedVolume < 0.5 ? '<i class="fa-solid fa-volume-low"></i>' : '<i class="fa-solid fa-volume-high"></i>';
       }
     };
@@ -2468,8 +2473,42 @@ function shakeInput(el) {
   el.addEventListener('animationend', () => el.classList.remove('shake'), { once: true });
 }
 
-// Leave room on page unload
+// Flush room state to DB (reusable for beforeunload + visibilitychange)
+function flushRoomState() {
+  const roomId = getRoomId();
+  if (!roomId || !getIsHost()) return;
+  const user = getCurrentUser();
+  const track = getCurrentTrack();
+  const users = getUsers();
+  const audio = getAudioElement();
+  dbSaveRoomImmediate({
+    roomId,
+    hostName: user?.name || roomId,
+    hostHandle: user?.handle || roomId,
+    hostAvatar: user?.profilePicture?.['150x150'] || null,
+    hostUserId: user?.userId || null,
+    userCount: users.length,
+    currentTrack: track ? { title: track.title, artist: track.user?.name || '' } : null,
+    playlist: getQueue(),
+    mutedUsers: Array.from(mutedUsers),
+    bannedUsers: Array.from(bannedUsers),
+    playbackState: track ? {
+      trackIndex: getCurrentIndex(),
+      position: audio?.currentTime || 0,
+      duration: audio?.duration || 0,
+      savedAt: Date.now(),
+    } : null,
+  });
+}
+
+// Save when tab is hidden (user switches tabs / minimizes) — reliable, fires before unload
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushRoomState();
+});
+
+// Save + leave on page unload
 window.addEventListener('beforeunload', () => {
+  flushRoomState();
   stopAnnouncing();
   leaveRoom();
 });

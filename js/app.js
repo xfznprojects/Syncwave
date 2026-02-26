@@ -275,10 +275,10 @@ function renderRoomCard(room, inactive = false) {
           : `<div class="room-host-avatar-fallback">${(room.hostName || room.roomId || '?')[0].toUpperCase()}</div>`}
         <div class="room-host-info">
           <span class="room-host-name">${escapeHtml(room.hostName || room.roomId)}${badgeHtml}</span>
-          ${inactive
-            ? `<span class="room-listener-count room-inactive-label"><i class="fa-solid fa-clock"></i> ${timeAgo}</span>`
-            : `<span class="room-listener-count"><i class="fa-solid fa-headphones"></i> ${room.userCount} listener${room.userCount !== 1 ? 's' : ''}</span>`}
         </div>
+        ${inactive
+          ? `<span class="room-listener-count room-inactive-label"><i class="fa-solid fa-clock"></i> ${timeAgo}</span>`
+          : `<span class="room-listener-count"><i class="fa-solid fa-headphones"></i> ${room.userCount} listener${room.userCount !== 1 ? 's' : ''}</span>`}
       </div>
       ${room.currentTrack ? `
         <div class="room-now-playing">

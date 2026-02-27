@@ -244,9 +244,23 @@
           <button class="search-tab" data-search-tab="favorites" id="tab-favorites" style="display:none"><i class="fa-solid fa-heart"></i> Favorites</button>
         </div>
         <input id="search-input" type="text" class="input" placeholder="Search Audius tracks..." style="display:none">
+        <div id="search-filters" class="search-filters" style="display:none">
+          <div class="filter-row">
+            <select id="filter-genre" class="filter-select"><option value="">All Genres</option></select>
+            <select id="filter-mood" class="filter-select"><option value="">All Moods</option></select>
+          </div>
+          <div class="filter-row">
+            <label class="filter-label">BPM</label>
+            <input id="filter-bpm-min" type="number" class="filter-input" placeholder="Min" min="0" max="300">
+            <span class="filter-sep">&ndash;</span>
+            <input id="filter-bpm-max" type="number" class="filter-input" placeholder="Max" min="0" max="300">
+            <div class="filter-spacer"></div>
+            <button id="filter-clear" class="btn-sm btn-ghost" title="Clear all filters"><i class="fa-solid fa-xmark"></i> Clear Filters</button>
+          </div>
+        </div>
         <div id="url-input-area" class="url-input-area" style="display:none">
           <div class="url-input-row">
-            <input id="audius-url-input" type="text" class="input" placeholder="Paste an Audius track or playlist URL...">
+            <input id="audius-url-input" type="text" class="input" placeholder="Paste an Audius track, playlist, or profile URL...">
             <button id="audius-url-add" class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Add</button>
           </div>
           <div id="url-status" class="url-status"></div>

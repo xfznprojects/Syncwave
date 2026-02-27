@@ -1270,6 +1270,30 @@ button { cursor: pointer; font-family: inherit; }
 }
 .track-item:hover { background: var(--accent-dim); }
 
+/* Gated / restricted tracks */
+.track-item.track-gated { opacity: 0.55; }
+.track-item.track-gated:hover { opacity: 0.75; }
+.track-artwork-wrap { position: relative; }
+.gated-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: rgba(0,0,0,0.75);
+  color: #f59e0b;
+  font-size: 9px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gated-reason {
+  color: #f59e0b;
+  font-size: 10px;
+  font-weight: 500;
+}
+
 .track-artwork-wrap {
   flex-shrink: 0;
   width: 40px;
@@ -1300,6 +1324,37 @@ button { cursor: pointer; font-family: inherit; }
   font-size: 11px;
   color: var(--text-dim);
   display: block;
+}
+
+/* Track metadata row (genre badge + duration + BPM) */
+.track-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+.genre-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.track-duration, .track-bpm {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.track-bpm {
+  opacity: 0.7;
 }
 
 .track-actions {
@@ -1721,8 +1776,8 @@ button { cursor: pointer; font-family: inherit; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   width: 90%;
-  max-width: 600px;
-  height: 80vh;
+  max-width: 680px;
+  height: 85vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6), var(--glow-accent);
@@ -1754,6 +1809,102 @@ button { cursor: pointer; font-family: inherit; }
   overflow-y: auto;
   padding: 8px 18px 18px;
   min-height: 0;
+}
+
+/* Search filter bar */
+.search-filters {
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter-select, .filter-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.filter-select:focus, .filter-input:focus {
+  border-color: var(--accent);
+}
+.filter-select {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a7090'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 22px;
+}
+.filter-select option {
+  background: var(--bg-card);
+  color: var(--text);
+}
+.filter-input {
+  width: 64px;
+  text-align: center;
+}
+.filter-input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+/* Hide number input spinners */
+.filter-input::-webkit-outer-spin-button,
+.filter-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.filter-input[type=number] { -moz-appearance: textfield; }
+.filter-sep {
+  color: var(--text-dim);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.filter-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-ghost {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-ghost:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+.btn-ghost i {
+  font-size: 9px;
+  margin-right: 2px;
+}
+.filter-spacer {
+  flex: 1;
 }
 
 /* URL input area */

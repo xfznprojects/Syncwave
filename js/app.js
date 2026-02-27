@@ -2,6 +2,7 @@ import CONFIG from './config.js';
 import {
   searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, setImageWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl, getPlaylistTracks,
   favoriteTrack, unfavoriteTrack, repostTrack, unrepostTrack, followUser, unfollowUser,
+  isTrackStreamable, filterStreamableTracks, getGateReason,
 } from './audius.js';
 import { initAuth, getCurrentUser, isLoggedIn, loginWithAudius, logout, getToken, enrichUserProfile } from './auth.js';
 import {
@@ -36,6 +37,58 @@ import {
   loadRoomPlaylist as dbLoadRoomPlaylist, loadRoomMutedUsers as dbLoadRoomMutedUsers, loadRoomBannedUsers as dbLoadRoomBannedUsers,
   loadRoom as dbLoadRoom, loadPermanentRooms as dbLoadPermanentRooms,
 } from './database.js';
+
+// ─── GENRE COLOR MAP ──────────────────────────────────────
+const GENRE_COLORS = {
+  // Bass / heavy
+  'Dubstep': '#a855f7', 'Trap': '#ef4444', 'Drum & Bass': '#f97316',
+  'Hardstyle': '#dc2626', 'Glitch Hop': '#e879f9',
+  // Electronic / dance
+  'Electronic': '#06b6d4', 'House': '#3b82f6', 'Tech House': '#6366f1',
+  'Trance': '#8b5cf6', 'Techno': '#64748b', 'EDM': '#ec4899',
+  'Dance': '#f472b6', 'Progressive House': '#818cf8', 'Electro': '#38bdf8',
+  'Disco': '#fb7185',
+  // Chill / mellow
+  'Ambient': '#5eead4', 'Lo-Fi': '#a78bfa', 'Downtempo': '#7dd3fc',
+  'Chillout': '#34d399', 'Jazz': '#fbbf24', 'Classical': '#d4d4d8',
+  'Acoustic': '#a3a3a3', 'Folk': '#d6d3d1',
+  // Other
+  'Hip-Hop/Rap': '#facc15', 'Pop': '#fb923c', 'Rock': '#78716c',
+  'R&B/Soul': '#f9a8d4', 'Reggae': '#4ade80', 'Latin': '#fb923c',
+  'Country': '#d97706', 'Funk': '#e879f9', 'Alternative': '#a1a1aa',
+  'Experimental': '#c084fc', 'Metal': '#71717a', 'Punk': '#f87171',
+  'Spoken Word': '#94a3b8',
+};
+const GENRE_COLOR_DEFAULT = '#94a3b8';
+
+function getGenreColor(genre) {
+  if (!genre) return GENRE_COLOR_DEFAULT;
+  return GENRE_COLORS[genre] || GENRE_COLOR_DEFAULT;
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return '';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// Genres available in Audius search API
+const FILTER_GENRES = [
+  'Electronic', 'House', 'Tech House', 'Progressive House', 'Techno',
+  'Trance', 'EDM', 'Dubstep', 'Drum & Bass', 'Trap', 'Hip-Hop/Rap',
+  'Pop', 'Rock', 'Metal', 'Alternative', 'R&B/Soul', 'Jazz', 'Classical',
+  'Ambient', 'Lo-Fi', 'Downtempo', 'Chillout', 'Reggae', 'Latin',
+  'Country', 'Folk', 'Funk', 'Disco', 'Experimental', 'Punk',
+  'Hardstyle', 'Glitch Hop', 'Acoustic', 'Dance', 'Electro', 'Spoken Word',
+];
+
+const FILTER_MOODS = [
+  'Peaceful', 'Romantic', 'Sentimental', 'Tender', 'Easygoing',
+  'Yearning', 'Sophisticated', 'Sensual', 'Cool', 'Serious',
+  'Upbeat', 'Empowering', 'Excited', 'Energizing', 'Fiery',
+  'Defiant', 'Aggressive', 'Gritty', 'Melancholy',
+];
 
 // Song requests
 let songRequests = [];
@@ -72,6 +125,11 @@ function serializeQueueForDB() {
     mood: t.mood || '',
     tags: t.tags || '',
     permalink: t.permalink || '',
+    // Preserve access fields so gated tracks can be skipped on restore
+    is_stream_gated: t.is_stream_gated || false,
+    access: t.access || null,
+    stream_conditions: t.stream_conditions || null,
+    is_delete: t.is_delete || false,
   }));
 }
 
@@ -202,6 +260,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   onPlayerEvent('onBuffering', (buffering) => {
     updateBufferingState(buffering);
+  });
+  onPlayerEvent('onTrackSkipped', (track, reason) => {
+    if (track) {
+      showToast(`Skipped "${track.title}": ${reason}`);
+    } else {
+      showToast(reason);
+    }
   });
   onPlayerEvent('onQueueChange', (queue, idx) => {
     renderQueue(queue, idx);
@@ -800,10 +865,77 @@ function togglePreview(track, btn, trackItem) {
   trackItem.classList.add('previewing');
 }
 
+function getActiveFilters() {
+  return {
+    genre: document.getElementById('filter-genre')?.value || '',
+    mood: document.getElementById('filter-mood')?.value || '',
+    bpmMin: document.getElementById('filter-bpm-min')?.value || '',
+    bpmMax: document.getElementById('filter-bpm-max')?.value || '',
+  };
+}
+
+function clearFilters() {
+  const g = document.getElementById('filter-genre');
+  const m = document.getElementById('filter-mood');
+  const bMin = document.getElementById('filter-bpm-min');
+  const bMax = document.getElementById('filter-bpm-max');
+  if (g) g.value = '';
+  if (m) m.value = '';
+  if (bMin) bMin.value = '';
+  if (bMax) bMax.value = '';
+}
+
+let filterDebounce = null;
+
 function setupSearch() {
   const input = document.getElementById('search-input');
   const urlArea = document.getElementById('url-input-area');
+  const filterBar = document.getElementById('search-filters');
   const tabs = document.querySelectorAll('.search-tab');
+
+  // Populate filter dropdowns
+  const genreSelect = document.getElementById('filter-genre');
+  const moodSelect = document.getElementById('filter-mood');
+  if (genreSelect) {
+    FILTER_GENRES.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g; opt.textContent = g;
+      genreSelect.appendChild(opt);
+    });
+  }
+  if (moodSelect) {
+    FILTER_MOODS.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      moodSelect.appendChild(opt);
+    });
+  }
+
+  // Filter change listeners — auto-reload current tab
+  const filterInputs = [genreSelect, moodSelect].filter(Boolean);
+  filterInputs.forEach(el => {
+    el.addEventListener('change', () => {
+      searchPage = 0;
+      reloadCurrentTab();
+    });
+  });
+  // BPM inputs: debounce 500ms
+  const bpmInputs = ['filter-bpm-min', 'filter-bpm-max'].map(id => document.getElementById(id)).filter(Boolean);
+  bpmInputs.forEach(el => {
+    el.addEventListener('input', () => {
+      clearTimeout(filterDebounce);
+      filterDebounce = setTimeout(() => { searchPage = 0; reloadCurrentTab(); }, 500);
+    });
+  });
+  // Clear button
+  const clearBtn = document.getElementById('filter-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      clearFilters();
+      searchPage = 0;
+      reloadCurrentTab();
+    });
+  }
 
   // Show My Tracks / Favorites tabs for logged-in users
   if (isLoggedIn()) {
@@ -820,9 +952,11 @@ function setupSearch() {
       activeSearchTab = tab.dataset.searchTab;
       searchPage = 0;
 
-      // Show/hide inputs
+      // Show/hide inputs and filter bar
+      const showFilters = activeSearchTab === 'search' || activeSearchTab === 'trending';
       if (input) input.style.display = activeSearchTab === 'search' ? '' : 'none';
       if (urlArea) urlArea.style.display = activeSearchTab === 'url' ? '' : 'none';
+      if (filterBar) filterBar.style.display = showFilters ? '' : 'none';
 
       // Clear previous results
       const container = document.getElementById('search-results');
@@ -908,14 +1042,20 @@ function setupUrlInput() {
           urlStatus.className = 'url-status error';
           return;
         }
-        let added = 0;
-        for (const track of allTracks) {
-          if (track && track.id) { addToQueue(track); added++; }
+        const { playable, gated } = filterStreamableTracks(allTracks);
+        if (playable.length === 0) {
+          urlStatus.textContent = `All ${allTracks.length} tracks are restricted (followers-only, purchase-gated, etc.)`;
+          urlStatus.className = 'url-status error';
+          return;
         }
-        urlStatus.textContent = `Added ${added} tracks from ${result.name || result.handle}`;
+        for (const track of playable) { addToQueue(track); }
+        const msg = gated.length > 0
+          ? `Added ${playable.length} tracks from ${result.name || result.handle} (${gated.length} restricted tracks skipped)`
+          : `Added ${playable.length} tracks from ${result.name || result.handle}`;
+        urlStatus.textContent = msg;
         urlStatus.className = 'url-status success';
         urlInput.value = '';
-        showToast(`Added ${added} tracks from ${result.name || result.handle}`);
+        showToast(msg);
       // Playlist: has playlist_name and tracks array
       } else if (result.playlist_name) {
         const tracks = result.tracks && result.tracks.length > 0
@@ -926,17 +1066,29 @@ function setupUrlInput() {
           urlStatus.className = 'url-status error';
           return;
         }
-        let added = 0;
-        for (const track of tracks) {
-          if (track && track.id) { addToQueue(track); added++; }
+        const { playable: plPlayable, gated: plGated } = filterStreamableTracks(tracks);
+        if (plPlayable.length === 0) {
+          urlStatus.textContent = `All ${tracks.length} tracks in "${result.playlist_name}" are restricted`;
+          urlStatus.className = 'url-status error';
+          return;
         }
-        urlStatus.textContent = `Added ${added} tracks from "${result.playlist_name}"`;
+        for (const track of plPlayable) { addToQueue(track); }
+        const plMsg = plGated.length > 0
+          ? `Added ${plPlayable.length} tracks from "${result.playlist_name}" (${plGated.length} restricted skipped)`
+          : `Added ${plPlayable.length} tracks from "${result.playlist_name}"`;
+        urlStatus.textContent = plMsg;
         urlStatus.className = 'url-status success';
         urlInput.value = '';
-        showToast(`Added ${added} tracks from "${result.playlist_name}"`);
+        showToast(plMsg);
         renderQueue();
       } else {
         // Single track
+        if (!isTrackStreamable(result)) {
+          const reason = getGateReason(result);
+          urlStatus.textContent = `"${result.title}" is not streamable: ${reason}`;
+          urlStatus.className = 'url-status error';
+          return;
+        }
         addToQueue(result);
         urlStatus.textContent = `Added "${result.title}" to queue`;
         urlStatus.className = 'url-status success';
@@ -957,7 +1109,8 @@ function setupUrlInput() {
 
 async function triggerSearch(query) {
   if (query.length >= 2) {
-    const results = await searchTracks(query, PAGE_SIZE, searchPage * PAGE_SIZE);
+    const filters = getActiveFilters();
+    const results = await searchTracks(query, PAGE_SIZE, searchPage * PAGE_SIZE, filters);
     searchLastQuery = query;
     renderSearchResults(results, 'Search Results');
   }
@@ -965,7 +1118,8 @@ async function triggerSearch(query) {
 
 async function loadTrending() {
   try {
-    const trending = await getTrending(null, 'week', PAGE_SIZE, searchPage * PAGE_SIZE);
+    const filters = getActiveFilters();
+    const trending = await getTrending(filters.genre || null, 'week', PAGE_SIZE, searchPage * PAGE_SIZE);
     renderSearchResults(trending, 'Trending on Audius');
   } catch { /* optional */ }
 }
@@ -1012,28 +1166,37 @@ function renderSearchResults(tracks, label = 'Search Results') {
 
   const headerHtml = `<div class="search-results-header">${escapeHtml(label)}</div>`;
 
-  container.innerHTML = headerHtml + tracks.map(track => `
-    <div class="track-item" data-track-id="${escapeHtml(track.id)}">
+  container.innerHTML = headerHtml + tracks.map(track => {
+    const gated = !isTrackStreamable(track);
+    const gateLabel = gated ? getGateReason(track) : '';
+    const genre = track.genre || '';
+    const genreColor = getGenreColor(genre);
+    const dur = formatDuration(track.duration);
+    const bpm = track.bpm ? Math.round(track.bpm) : null;
+    return `
+    <div class="track-item${gated ? ' track-gated' : ''}" data-track-id="${escapeHtml(track.id)}">
       <div class="track-artwork-wrap">
         <img class="track-artwork" src="${escapeHtml(getArtworkUrl(track, '150x150') || '')}" alt="" loading="lazy">
+        ${gated ? '<span class="gated-badge"><i class="fa-solid fa-lock"></i></span>' : ''}
       </div>
       <div class="track-info">
         <span class="track-title">${escapeHtml(track.title)}</span>
-        <span class="track-artist">${escapeHtml(track.user?.name || 'Unknown')}</span>
+        <span class="track-artist">${escapeHtml(track.user?.name || 'Unknown')}${gated ? ` <span class="gated-reason">${escapeHtml(gateLabel)}</span>` : ''}</span>
+        <span class="track-meta">${genre ? `<span class="genre-badge" style="background:${genreColor}20;color:${genreColor};border-color:${genreColor}40">${escapeHtml(genre)}</span>` : ''}${dur ? `<span class="track-duration">${dur}</span>` : ''}${bpm ? `<span class="track-bpm">${bpm} BPM</span>` : ''}</span>
       </div>
       <div class="track-actions">
         ${getIsHost() ? `
           <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
-          <button class="btn-icon btn-add-queue" title="Add to queue"><i class="fa-solid fa-plus"></i></button>
+          <button class="btn-icon btn-add-queue" title="${gated ? gateLabel : 'Add to queue'}"><i class="fa-solid fa-plus"></i></button>
         ` : isLoggedIn() ? `
           <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
-          <button class="btn-icon btn-request" title="Request song"><i class="fa-solid fa-hand"></i></button>
+          <button class="btn-icon btn-request" title="${gated ? gateLabel : 'Request song'}"><i class="fa-solid fa-hand"></i></button>
         ` : `
           <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
         `}
       </div>
-    </div>
-  `).join('') + renderPagination(tracks.length);
+    </div>`;
+  }).join('') + renderPagination(tracks.length);
 
   // Apply artwork fallback
   container.querySelectorAll('.track-item').forEach((item, i) => {
@@ -1054,6 +1217,10 @@ function renderSearchResults(tracks, label = 'Search Results') {
   container.querySelectorAll('.btn-add-queue').forEach((btn, i) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (!isTrackStreamable(tracks[i])) {
+        showToast(`Can't add "${tracks[i].title}": ${getGateReason(tracks[i])}`);
+        return;
+      }
       addToQueue(tracks[i]);
       showToast(`Added "${tracks[i].title}" to queue`);
     });
@@ -1063,6 +1230,10 @@ function renderSearchResults(tracks, label = 'Search Results') {
   container.querySelectorAll('.btn-request').forEach((btn, i) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (!isTrackStreamable(tracks[i])) {
+        showToast(`Can't request "${tracks[i].title}": ${getGateReason(tracks[i])}`);
+        return;
+      }
       requestSong(tracks[i]);
       showToast(`Requested "${tracks[i].title}"`);
     });
@@ -1582,6 +1753,9 @@ function openSearchModal() {
   const modal = document.getElementById('search-modal');
   if (modal) {
     modal.classList.remove('hidden');
+    // Show filter bar for default Trending tab
+    const filterBar = document.getElementById('search-filters');
+    if (filterBar) filterBar.style.display = '';
     loadTrending();
   }
 }
@@ -1851,6 +2025,8 @@ function setupQueueToolbar() {
           const data = JSON.parse(ev.target.result);
           const tracks = data.tracks || data;
           if (Array.isArray(tracks) && tracks.length > 0) {
+            // File imports don't have API access fields, so load as-is
+            // (gated tracks from file would fail at playback, not import)
             loadQueueFromData(tracks, true);
             showToast(`Imported ${tracks.length} tracks`);
           } else {

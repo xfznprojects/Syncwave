@@ -1,5 +1,5 @@
 import CONFIG from './config.js';
-import { getStreamUrl, getTrack } from './audius.js';
+import { getStreamUrl, getTrack, isTrackStreamable, getGateReason } from './audius.js';
 import { broadcast, getIsHost } from './room.js';
 
 let audio = null;
@@ -23,6 +23,7 @@ const listeners = {
   onTimeUpdate: null,
   onQueueChange: null,
   onBuffering: null,
+  onTrackSkipped: null,
 };
 
 export function onPlayerEvent(event, callback) {
@@ -68,6 +69,11 @@ export function initPlayer() {
   });
   audio.addEventListener('error', () => {
     if (listeners.onBuffering) listeners.onBuffering(false);
+    // Stream failed (gated track loaded from DB, deleted, etc.) — auto-skip
+    if (currentTrack && queue.length > 1) {
+      if (listeners.onTrackSkipped) listeners.onTrackSkipped(currentTrack, 'Stream unavailable');
+      playNext();
+    }
   });
 
   return audio;
@@ -124,9 +130,39 @@ export function resumeAudioContext() {
   }
 }
 
+let skipCount = 0; // guards against infinite skip loops
+
 export async function playTrack(track) {
   if (!audio) initPlayer();
   resumeAudioContext();
+
+  // Check if track is gated/restricted — skip to next if so
+  if (!isTrackStreamable(track)) {
+    const reason = getGateReason(track);
+    if (listeners.onTrackSkipped) listeners.onTrackSkipped(track, reason);
+
+    skipCount++;
+    if (skipCount >= queue.length) {
+      // Every track in the queue is restricted — stop trying
+      skipCount = 0;
+      if (listeners.onTrackSkipped) listeners.onTrackSkipped(null, 'All tracks in queue are restricted');
+      return;
+    }
+
+    // Advance to next track
+    if (queue.length > 1) {
+      if (shuffleMode) {
+        let next;
+        do { next = Math.floor(Math.random() * queue.length); } while (next === currentIndex && queue.length > 1);
+        currentIndex = next;
+      } else {
+        currentIndex = (currentIndex + 1) % queue.length;
+      }
+      playTrack(queue[currentIndex]);
+    }
+    return;
+  }
+  skipCount = 0;
 
   // Pause current playback before switching to avoid play() interruption
   if (!audio.paused) audio.pause();

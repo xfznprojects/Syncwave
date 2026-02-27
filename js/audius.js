@@ -12,8 +12,13 @@ async function apiFetch(path) {
   return res.json();
 }
 
-export async function searchTracks(query, limit = 25, offset = 0) {
-  const data = await apiFetch(`/tracks/search?query=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`);
+export async function searchTracks(query, limit = 25, offset = 0, filters = {}) {
+  let path = `/tracks/search?query=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
+  if (filters.genre) path += `&genre=${encodeURIComponent(filters.genre)}`;
+  if (filters.mood) path += `&mood=${encodeURIComponent(filters.mood)}`;
+  if (filters.bpmMin) path += `&bpm_min=${filters.bpmMin}`;
+  if (filters.bpmMax) path += `&bpm_max=${filters.bpmMax}`;
+  const data = await apiFetch(path);
   return data.data || [];
 }
 
@@ -135,6 +140,57 @@ export async function getPlaylistTracks(playlistId) {
 export function getUserAvatar(user, size = '150x150') {
   if (!user?.profile_picture) return null;
   return user.profile_picture[size] || user.profile_picture['150x150'] || null;
+}
+
+// ─── TRACK ACCESS CHECKS ──────────────────────────────────────────────
+
+// Returns true if the track can be streamed by the general public.
+// Checks is_stream_gated and access.stream fields from the Audius API.
+export function isTrackStreamable(track) {
+  if (!track || !track.id) return false;
+  // Explicit gate flag
+  if (track.is_stream_gated) return false;
+  // access.stream is false → user can't play it
+  if (track.access && track.access.stream === false) return false;
+  // Deleted or unavailable tracks
+  if (track.is_delete) return false;
+  if (track.is_available === false) return false;
+  return true;
+}
+
+// Returns a human-readable reason why a track is not streamable.
+export function getGateReason(track) {
+  if (!track) return 'Track not found';
+  if (track.is_delete) return 'Track has been deleted';
+  if (track.is_available === false) return 'Track is unavailable';
+  const cond = track.stream_conditions;
+  if (cond) {
+    if (cond.follow_user_id) return 'Followers only';
+    if (cond.tip_user_id) return 'Tip required';
+    if (cond.usdc_purchase) {
+      const price = (cond.usdc_purchase.price / 100).toFixed(2);
+      return `Purchase required ($${price})`;
+    }
+    if (cond.nft_collection) return 'NFT holders only';
+  }
+  if (track.is_stream_gated) return 'Restricted access';
+  if (track.access && track.access.stream === false) return 'Not streamable';
+  return 'Unknown restriction';
+}
+
+// Splits an array of tracks into {playable, gated}.
+// gated entries include {track, reason} for reporting.
+export function filterStreamableTracks(tracks) {
+  const playable = [];
+  const gated = [];
+  for (const track of tracks) {
+    if (isTrackStreamable(track)) {
+      playable.push(track);
+    } else {
+      gated.push({ track, reason: getGateReason(track) });
+    }
+  }
+  return { playable, gated };
 }
 
 // ─── AUTHENTICATED WRITE OPERATIONS (via Netlify Function proxy) ──────

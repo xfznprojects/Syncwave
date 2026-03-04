@@ -13,7 +13,7 @@ import {
   initPlayer, playTrack, play, pause, togglePlay, seek,
   getCurrentTrack, getPlayState, getQueue, getCurrentIndex, addToQueue, removeFromQueue, clearQueue,
   playNext, playPrevious, playFromQueue, toggleShuffle, isShuffled,
-  onPlayerEvent, handleSync, handleTrackChange, getAnalyser, resumeAudioContext,
+  onPlayerEvent, handleSync, handleTrackChange, getAnalyser, resumeAudioContext, unlockAudio,
   stopSyncLoop, destroy as destroyPlayer, setVolume, getVolume,
   moveInQueue, loadQueueFromData, getAudioElement,
   startDeterministicSync, stopDeterministicSync, calculateDeterministicPosition,
@@ -541,7 +541,7 @@ async function enterRoom(roomId) {
   // This prevents browsers from blocking autoplay later after async DB calls.
   initPlayer();
   getAnalyser(); // creates AudioContext within user gesture context
-  resumeAudioContext();
+  unlockAudio(); // iOS: play silent buffer to unlock audio element for later programmatic play
 
   // Load room metadata from DB (for permanent rooms, playback state, etc.)
   let roomData = null;
@@ -2472,6 +2472,10 @@ function setupMobileTabs() {
       chatPanel?.classList.remove('mobile-active');
       sidebarPanel?.classList.remove('mobile-active');
 
+      // Show/hide fixed player bar based on active tab
+      const playerBar = document.querySelector('.player-bar');
+      if (playerBar) playerBar.style.display = target === 'player' ? '' : 'none';
+
       if (target === 'chat') {
         chatPanel?.classList.add('mobile-active');
       } else if (target === 'queue' || target === 'requests') {
@@ -2479,7 +2483,6 @@ function setupMobileTabs() {
         const section = sidebarPanel?.querySelector(`[data-panel="${target}"]`);
         if (section) section.scrollIntoView({ behavior: 'smooth' });
       }
-      // 'player' = default, no overlay shown
     });
   });
 }

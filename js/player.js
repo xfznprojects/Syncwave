@@ -130,6 +130,33 @@ export function resumeAudioContext() {
   }
 }
 
+// iOS/mobile requires audio.play() within a user gesture to "unlock" the element.
+// Play a tiny silent buffer so subsequent programmatic plays work.
+let audioUnlocked = false;
+const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+export function unlockAudio() {
+  if (audioUnlocked || !audio || !isMobileDevice) return;
+  audioUnlocked = true;
+
+  // Unlock the HTML audio element with a silent play
+  const prevSrc = audio.src;
+  audio.muted = true;
+  // Data URI: 0.1s silent WAV
+  audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+  const p = audio.play();
+  if (p) p.then(() => {
+    audio.pause();
+    audio.muted = false;
+    audio.src = prevSrc || '';
+  }).catch(() => {
+    audio.muted = false;
+    audio.src = prevSrc || '';
+  });
+
+  // Also unlock AudioContext
+  resumeAudioContext();
+}
+
 let skipCount = 0; // guards against infinite skip loops
 
 export async function playTrack(track) {

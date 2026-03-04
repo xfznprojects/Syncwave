@@ -19,7 +19,7 @@ import {
   startDeterministicSync, stopDeterministicSync, calculateDeterministicPosition,
 } from './player.js';
 import { initVisualizer, startVisualizer as startVis2D, stopVisualizer as stopVis2D, cycleMode, getMode, destroy as destroyVis2D } from './visualizer.js';
-import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D, setVisualizerMood } from './visualizer3d.js';
+import { initVisualizer3D, startVisualizer3D, stopVisualizer3D, destroyVisualizer3D, setVisualizerMood, cycle3DMode, get3DMode } from './visualizer3d.js';
 import { computeVisualizerParams } from './visualizer-mood.js';
 import {
   initChat, sendMessage, sendGif, handleIncomingMessage, clearChat,
@@ -1517,25 +1517,23 @@ function setupPlayerControls() {
 
   if (vizBtn) {
     vizBtn.addEventListener('click', () => {
-      const isMobile = window.innerWidth <= 900;
       const vis3dEl = document.getElementById('visualizer-3d');
       const vis2dEl = document.getElementById('visualizer-canvas');
 
-      if (isMobile) {
-        // Mobile: only cycle 2D modes, no 3D
-        const mode = cycleMode();
-        showToast(`Visualizer: ${mode}`);
-        return;
-      }
-
       if (use3D) {
-        // Switch from 3D → first 2D mode (bars)
-        use3D = false;
-        stopVisualizer3D();
-        if (vis3dEl) vis3dEl.style.display = 'none';
-        if (vis2dEl) vis2dEl.style.display = 'block';
-        startVis2D();
-        showToast(`Visualizer: ${getMode()}`);
+        // Cycle 3D sub-modes first (wireframe → bubble → ...)
+        const next3D = cycle3DMode();
+        if (next3D === 'wireframe') {
+          // Wrapped back to wireframe → switch to 2D modes
+          use3D = false;
+          stopVisualizer3D();
+          if (vis3dEl) vis3dEl.style.display = 'none';
+          if (vis2dEl) vis2dEl.style.display = 'block';
+          startVis2D();
+          showToast(`Visualizer: ${getMode()}`);
+        } else {
+          showToast(`Visualizer: 3D ${next3D}`);
+        }
       } else {
         const mode = cycleMode();
         if (mode === 'bars') {
@@ -1545,7 +1543,7 @@ function setupPlayerControls() {
           if (vis2dEl) vis2dEl.style.display = 'none';
           if (vis3dEl) vis3dEl.style.display = '';
           startVisualizer3D();
-          showToast('Visualizer: 3D');
+          showToast(`Visualizer: 3D ${get3DMode()}`);
         } else {
           showToast(`Visualizer: ${mode}`);
         }

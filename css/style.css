@@ -2124,9 +2124,7 @@ button { cursor: pointer; font-family: inherit; }
     grid-template-columns: 1fr;
     position: relative;
   }
-  /* Mobile: hide 3D (too heavy), show 2D canvas fallback */
-  .visualizer-3d { display: none !important; }
-  .visualizer-2d { display: block !important; position: relative; }
+  .visualizer-2d { position: relative; }
 
   .panel-chat,
   .panel-sidebar {

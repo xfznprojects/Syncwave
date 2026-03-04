@@ -69,6 +69,8 @@ export function initPlayer() {
   });
   audio.addEventListener('error', () => {
     if (listeners.onBuffering) listeners.onBuffering(false);
+    // Ignore errors from empty src or audio unlock data URI
+    if (!audio.src || audio.src === window.location.href || audio.src.startsWith('data:')) return;
     // Stream failed (gated track loaded from DB, deleted, etc.) — auto-skip
     if (currentTrack && queue.length > 1) {
       if (listeners.onTrackSkipped) listeners.onTrackSkipped(currentTrack, 'Stream unavailable');

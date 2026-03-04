@@ -2118,7 +2118,7 @@ button { cursor: pointer; font-family: inherit; }
 /* ─── RESPONSIVE ─────────────────────────────────────────── */
 @media (max-width: 900px) {
   #room-view {
-    height: calc(100vh - var(--header-h) - var(--mobile-tab-h));
+    height: calc(100vh - var(--header-h) - var(--mobile-tab-h) - 56px);
   }
   .room-layout {
     grid-template-columns: 1fr;
@@ -2141,8 +2141,15 @@ button { cursor: pointer; font-family: inherit; }
   .mobile-tabs { display: flex; }
 
   .player-bar {
+    position: fixed;
+    bottom: var(--mobile-tab-h);
+    left: 0;
+    right: 0;
+    z-index: 99;
     padding: 6px 10px;
     gap: 8px;
+    background: rgba(5, 5, 16, 0.97);
+    backdrop-filter: blur(12px);
   }
   .player-bar-center {
     position: static;
@@ -2150,13 +2157,12 @@ button { cursor: pointer; font-family: inherit; }
     flex: 1;
     pointer-events: auto;
   }
-  .player-bar-right { margin-left: 0; }
+  .player-bar-right { margin-left: 0; min-width: auto; }
   .player-bar-left { min-width: 80px; max-width: 140px; }
   .player-bar-artwork-wrap { width: 40px; height: 40px; }
   .player-bar-artwork { width: 40px; height: 40px; }
   .social-actions { display: none; }
   .chat-input-area { min-height: 60px; }
-  .player-bar-right { min-width: auto; }
   .volume-control { display: none; }
 
   .room-panel { border-right: none; }

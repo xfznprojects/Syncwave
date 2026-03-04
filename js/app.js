@@ -133,8 +133,8 @@ function serializeQueueForDB() {
   }));
 }
 
-// Visualizer routing — 3D on desktop, 2D on mobile
-let use3D = window.innerWidth > 900;
+// Visualizer routing — set to true after successful 3D init
+let use3D = true;
 
 function startVisualizer() {
   if (use3D) startVisualizer3D();
@@ -578,20 +578,16 @@ async function enterRoom(roomId) {
     }
   }
 
-  // Init visualizers — 3D on desktop, 2D fallback on mobile
-  use3D = window.innerWidth > 900;
+  // Init visualizers — always init both, default to 3D
   const canvas = document.getElementById('visualizer-canvas');
   if (canvas) initVisualizer(canvas);
-  if (use3D) {
-    const container3d = document.getElementById('visualizer-3d');
-    if (container3d) {
-      const ok = await initVisualizer3D(container3d);
-      if (!ok) {
-        // Three.js failed to load — fall back to 2D
-        use3D = false;
-        console.warn('Falling back to 2D visualizer');
-      }
-    }
+  const container3d = document.getElementById('visualizer-3d');
+  if (container3d) {
+    const ok = await initVisualizer3D(container3d);
+    use3D = ok;
+    if (!ok) console.warn('Falling back to 2D visualizer');
+  } else {
+    use3D = false;
   }
 
   // Init stereo waveform

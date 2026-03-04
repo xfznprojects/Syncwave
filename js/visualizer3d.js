@@ -234,10 +234,11 @@ function initThreeJS() {
   camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 1000);
   camera.position.set(0, 0, 8);
 
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   renderer = new THREE.WebGLRenderer({
     antialias: !isLowEnd,
     alpha: true,
-    powerPreference: 'high-performance',
+    powerPreference: isIOS ? 'default' : 'high-performance',
     stencil: false,
   });
   renderer.setSize(w, h);

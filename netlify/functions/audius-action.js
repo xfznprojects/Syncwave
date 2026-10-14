@@ -1,3 +1,4 @@
+const { reply, validateRequest } = require('../session.cjs');
 // Netlify serverless function — proxies authenticated Audius write operations.
 // The API secret stays server-side and never reaches the browser.
 // Auth: HTTP Basic Auth with base64(apiKey:apiSecret)
@@ -6,12 +7,12 @@ const AUDIUS_API_BASE = 'https://api.audius.co/v1';
 
 // Allowed actions → { method, pathBuilder }
 const ACTIONS = {
-  'favorite':    { method: 'POST',   path: (p) => `/tracks/${p.trackId}/favorites?user_id=${enc(p.userId)}` },
-  'unfavorite':  { method: 'DELETE', path: (p) => `/tracks/${p.trackId}/favorites?user_id=${enc(p.userId)}` },
-  'repost':      { method: 'POST',   path: (p) => `/tracks/${p.trackId}/reposts?user_id=${enc(p.userId)}` },
-  'unrepost':    { method: 'DELETE', path: (p) => `/tracks/${p.trackId}/reposts?user_id=${enc(p.userId)}` },
-  'follow':      { method: 'POST',   path: (p) => `/users/${p.targetUserId}/following?user_id=${enc(p.userId)}` },
-  'unfollow':    { method: 'DELETE', path: (p) => `/users/${p.targetUserId}/following?user_id=${enc(p.userId)}` },
+  'favorite':    { method: 'POST',   path: (p) => `/tracks/${enc(p.trackId)}/favorites?user_id=${enc(p.userId)}` },
+  'unfavorite':  { method: 'DELETE', path: (p) => `/tracks/${enc(p.trackId)}/favorites?user_id=${enc(p.userId)}` },
+  'repost':      { method: 'POST',   path: (p) => `/tracks/${enc(p.trackId)}/reposts?user_id=${enc(p.userId)}` },
+  'unrepost':    { method: 'DELETE', path: (p) => `/tracks/${enc(p.trackId)}/reposts?user_id=${enc(p.userId)}` },
+  'follow':      { method: 'POST',   path: (p) => `/users/${enc(p.targetUserId)}/following?user_id=${enc(p.userId)}` },
+  'unfollow':    { method: 'DELETE', path: (p) => `/users/${enc(p.targetUserId)}/following?user_id=${enc(p.userId)}` },
 };
 
 function enc(v) { return encodeURIComponent(v); }
@@ -22,6 +23,13 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
+  try {
+    validateRequest(event);
+    const { authenticate, requireUser } = await import('../auth.mjs');
+    const user = requireUser(await authenticate(new Request('https://local/action', { headers: event.headers }), process.env));
+    const requestedUser = JSON.parse(event.body).userId;
+    if (requestedUser !== user.userId) return reply(403, { error: 'Invalid action user' });
+  } catch (error) { return reply(error.status || 400, { error: error.status ? error.message : 'Invalid JSON' }); }
   // Parse body
   let body;
   try {
@@ -33,7 +41,7 @@ exports.handler = async (event) => {
   const { action, userId, trackId, targetUserId } = body;
 
   // Validate action
-  const actionDef = ACTIONS[action];
+  const actionDef = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : null;
   if (!actionDef) {
     return { statusCode: 400, body: JSON.stringify({ error: `Unknown action: ${action}` }) };
   }

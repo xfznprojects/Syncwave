@@ -1,3 +1,4 @@
+import { escapeHtml } from './security.js';
 import CONFIG from './config.js';
 import {
   searchTracks, getTrending, getArtworkUrl, setArtworkWithFallback, setImageWithFallback, getUserTracks, getUserFavorites, resolveUrl, getStreamUrl, getPlaylistTracks,
@@ -201,9 +202,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   onRoomEvent('onPresenceChange', (users) => {
     renderListeners(users);
-    // Update DB user count for ALL users (not just host) so 24/7 rooms show accurate counts
-    const presenceRoomId = getRoomId();
-    if (presenceRoomId) dbUpdateRoomUserCount(presenceRoomId, users.length);
+    // Listener counts are maintained by the authenticated realtime relay.
     // Host also persists full room state
     persistRoomToDB();
   });
@@ -242,13 +241,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderQueue(getQueue(), getCurrentIndex());
     // Persist room to DB on track change (host persists full state)
     persistRoomToDB();
-    // Non-host: update current_track in DB so directory shows what's playing in hostless rooms
-    if (!getIsHost() && track) {
-      const trackRoomId = getRoomId();
-      if (trackRoomId) {
-        dbUpdateRoomCurrentTrack(trackRoomId, { title: track.title, artist: track.user?.name || '' });
-      }
-    }
+    // Only owners persist playback state.
   });
   onPlayerEvent('onPlayStateChange', (playing) => {
     updatePlayButton(playing);
@@ -363,13 +356,13 @@ function renderRoomCard(room, inactive = false) {
       <div class="room-card-header">
         ${room.hostAvatar
           ? `<img class="room-host-avatar" src="${escapeHtml(room.hostAvatar)}" alt="${escapeHtml(room.hostName)}">`
-          : `<div class="room-host-avatar-fallback">${(room.hostName || room.roomId || '?')[0].toUpperCase()}</div>`}
+          : `<div class="room-host-avatar-fallback">${escapeHtml((room.hostName || room.roomId || '?')[0].toUpperCase())}</div>`}
         <div class="room-host-info">
           <span class="room-host-name">${escapeHtml(room.hostName || room.roomId)}${badgeHtml}</span>
         </div>
         ${inactive
           ? `<span class="room-listener-count room-inactive-label"><i class="fa-solid fa-clock"></i> ${timeAgo}</span>`
-          : `<span class="room-listener-count"><i class="fa-solid fa-headphones"></i> ${room.userCount} listener${room.userCount !== 1 ? 's' : ''}</span>`}
+          : `<span class="room-listener-count"><i class="fa-solid fa-headphones"></i> ${Number(room.userCount)||0} listener${room.userCount !== 1 ? 's' : ''}</span>`}
       </div>
       ${room.currentTrack ? `
         <div class="room-now-playing">
@@ -754,11 +747,7 @@ async function exitRoom() {
   const roomId = getRoomId();
   const amHost = getIsHost();
 
-  // For non-hosts: update listener count before leaving (so 24/7 rooms decrement correctly)
-  // For hosts: dbSaveRoomImmediate below already includes the decremented user_count
-  if (roomId && !amHost) {
-    await dbUpdateRoomUserCount(roomId, Math.max(0, getUsers().length - 1));
-  }
+  // The authenticated relay updates presence when guests leave.
 
   // Persist full room state for host — AWAIT to ensure save completes before cleanup
   if (roomId && amHost) {
@@ -1183,10 +1172,10 @@ function renderSearchResults(tracks, label = 'Search Results') {
       <div class="track-actions">
         ${getIsHost() ? `
           <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
-          <button class="btn-icon btn-add-queue" title="${gated ? gateLabel : 'Add to queue'}"><i class="fa-solid fa-plus"></i></button>
+          <button class="btn-icon btn-add-queue" title="${escapeHtml(gated ? gateLabel : 'Add to queue')}"><i class="fa-solid fa-plus"></i></button>
         ` : isLoggedIn() ? `
           <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
-          <button class="btn-icon btn-request" title="${gated ? gateLabel : 'Request song'}"><i class="fa-solid fa-hand"></i></button>
+          <button class="btn-icon btn-request" title="${escapeHtml(gated ? gateLabel : 'Request song')}"><i class="fa-solid fa-hand"></i></button>
         ` : `
           <button class="btn-icon btn-preview" title="Preview"><i class="fa-solid fa-headphones"></i></button>
         `}
@@ -2607,7 +2596,7 @@ function stopAnnouncing() {
   }
   // Announce with 0 users to remove from active directory
   const roomId = getRoomId();
-  if (roomId) {
+  if (roomId && getIsHost()) {
     announceRoom({ roomId, userCount: 0 });
     dbUpdateRoomUserCount(roomId, 0);
   }
@@ -2661,13 +2650,6 @@ function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function escapeHtml(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 function getTimeAgo(dateStr) {

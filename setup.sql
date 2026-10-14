@@ -81,43 +81,12 @@ CREATE INDEX IF NOT EXISTS idx_rooms_last_active
   ON rooms (last_active_at DESC);
 
 -- ─── ROW LEVEL SECURITY ──────────────────────────────────
--- We authenticate via Audius OAuth (not Supabase Auth), so we can't use
--- auth.uid(). Instead we restrict operations by type to limit abuse surface.
-
+-- New installs fail closed until migrations/0001_security.sql is applied.
+-- Audius identity is verified by Netlify and exchanged for a signed session.
 ALTER TABLE playlists ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rooms ENABLE ROW LEVEL SECURITY;
-
--- ── Playlists: read all, insert/update own rows only, no deletes ──
-CREATE POLICY "Playlists are readable" ON playlists
-  FOR SELECT USING (true);
-
-CREATE POLICY "Users can insert own playlists" ON playlists
-  FOR INSERT WITH CHECK (user_id IS NOT NULL AND length(user_id) > 0);
-
-CREATE POLICY "Users can update own playlists" ON playlists
-  FOR UPDATE USING (true) WITH CHECK (user_id IS NOT NULL AND length(user_id) > 0);
-
--- ── Chat: anyone can read and insert, no updates or deletes ──
-CREATE POLICY "Chat messages are readable" ON chat_messages
-  FOR SELECT USING (true);
-
-CREATE POLICY "Anyone can send chat messages" ON chat_messages
-  FOR INSERT WITH CHECK (
-    room_id IS NOT NULL AND length(room_id) > 0
-    AND user_id IS NOT NULL AND length(user_id) > 0
-    AND length(coalesce(text, '')) <= 2000
-  );
-
--- ── Rooms: anyone can read, insert, and update (collaborative), no deletes ──
-CREATE POLICY "Rooms are readable" ON rooms
-  FOR SELECT USING (true);
-
-CREATE POLICY "Anyone can create rooms" ON rooms
-  FOR INSERT WITH CHECK (room_id IS NOT NULL AND length(room_id) > 0);
-
-CREATE POLICY "Anyone can update rooms" ON rooms
-  FOR UPDATE USING (true) WITH CHECK (room_id IS NOT NULL AND length(room_id) > 0);
+-- Run migrations/0001_security.sql next; it installs ownership policies.
 
 -- ─── SEED PERMANENT DEMO ROOMS ─────────────────────────────
 -- These rooms always appear in the directory. Manage playlists via SQL (see below).

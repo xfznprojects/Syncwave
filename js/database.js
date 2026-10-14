@@ -1,4 +1,4 @@
-import { getSupabaseClient } from './supabase-client.js';
+import { getSupabaseClient, getSession } from './supabase-client.js';
 
 function getClient() {
   return getSupabaseClient();
@@ -311,17 +311,20 @@ function mapRoomRow(row) {
 export async function saveChatMessage(roomId, message) {
   try {
     const client = getClient();
-    await client.from('chat_messages').insert({
+    const { user } = await getSession();
+    if (!user.userId) throw new Error('Log in to persist chat');
+    const { error } = await client.from('chat_messages').insert({
       room_id: roomId,
-      user_id: message.userId || 'anon',
-      handle: message.handle || 'Anonymous',
-      name: message.name || 'Anonymous',
-      avatar_url: message.avatar || null,
+      user_id: user.userId,
+      handle: user.handle,
+      name: user.name,
+      avatar_url: user.avatar || null,
       text: message.text || '',
       gif_url: message.gifUrl || null,
       preview_url: message.previewUrl || null,
-      timestamp: message.timestamp,
+      timestamp: Date.now(),
     });
+    if (error) throw error;
   } catch (e) {
     console.warn('Failed to save chat message:', e);
     // Fallback: localStorage

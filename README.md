@@ -1,3 +1,8 @@
+# Security setup required
+
+Before deploying, follow [the security rollout instructions](docs/security-setup.md).
+The required Supabase migration and Netlify secrets are not applied by a Git push.
+
 <p align="center">
   <img src="https://img.shields.io/badge/Audius-7E1BCC?style=for-the-badge&logo=audius&logoColor=white" alt="Audius">
   <img src="https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase">

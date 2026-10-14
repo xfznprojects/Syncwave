@@ -1,6 +1,10 @@
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["netlify/auth.mjs", "netlify/session.cjs"]
+
 [build]
   command = "node build.js"
-  publish = "."
+  publish = "dist"
   functions = "netlify/functions"
 
 [[redirects]]

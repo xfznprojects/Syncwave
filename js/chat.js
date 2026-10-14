@@ -1,3 +1,4 @@
+import { escapeHtml } from './security.js';
 import CONFIG from './config.js';
 import { broadcast } from './room.js';
 import { getCurrentUser } from './auth.js';
@@ -314,12 +315,7 @@ export function setupGifSearch(inputEl, onResults) {
   });
 }
 
-function escapeHtml(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
+
 
 // Only allow https:// URLs (blocks javascript:, data:, blob:, etc.)
 function sanitizeUrl(url) {

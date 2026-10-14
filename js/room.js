@@ -1,4 +1,5 @@
-import { getSupabaseClient } from './supabase-client.js';
+import { loadActiveRooms } from './database.js';
+import { getRealtimeClient } from './realtime.js';
 
 let currentChannel = null;
 let currentRoomId = null;
@@ -14,14 +15,15 @@ const listeners = {
   onRequestResponse: null,
   onPresenceChange: null,
   onKick: null,
+  onBan: null,
 };
 
 export function onRoomEvent(event, callback) {
   listeners[event] = callback;
 }
 
-function getSupabase() {
-  return getSupabaseClient();
+function getRealtime() {
+  return getRealtimeClient();
 }
 
 export function getRoomId() {
@@ -68,7 +70,7 @@ export async function joinRoom(roomId, user) {
 }
 
 async function joinChannel(roomId, user) {
-  const client = getSupabase();
+  const client = getRealtime();
 
   currentChannel = client.channel(`room:${roomId}`, {
     config: {
@@ -108,6 +110,10 @@ async function joinChannel(roomId, user) {
 
   currentChannel.on('broadcast', { event: 'kick' }, ({ payload }) => {
     if (listeners.onKick) listeners.onKick(payload);
+  });
+
+  currentChannel.on('broadcast', { event: 'ban' }, ({ payload }) => {
+    if (listeners.onBan) listeners.onBan(payload);
   });
 
   currentChannel.on('broadcast', { event: 'request-state' }, ({ payload }) => {
@@ -150,10 +156,8 @@ export async function leaveRoom() {
   presenceState = {};
 }
 
-// Discover active rooms by subscribing to a lobby channel
-// All rooms broadcast their existence to a shared "lobby" channel
+// Discover active rooms from owner-protected database records.
 let lobbyChannel = null;
-const activeRooms = new Map();
 let lobbyCallback = null;
 
 export function onLobbyUpdate(callback) {
@@ -161,40 +165,15 @@ export function onLobbyUpdate(callback) {
 }
 
 export async function joinLobby() {
-  const client = getSupabase();
-
-  lobbyChannel = client.channel('lobby', {
-    config: {
-      presence: { key: 'lobby' },
-      broadcast: { self: false },
-    },
-  });
-
-  lobbyChannel.on('broadcast', { event: 'room-announce' }, ({ payload }) => {
-    if (payload.userCount > 0) {
-      activeRooms.set(payload.roomId, payload);
-    } else {
-      activeRooms.delete(payload.roomId);
-    }
-    if (lobbyCallback) lobbyCallback(Array.from(activeRooms.values()));
-  });
-
-  await lobbyChannel.subscribe();
+  const refresh = async () => { if (lobbyCallback) lobbyCallback(await loadActiveRooms()); };
+  await refresh();
+  clearInterval(lobbyChannel);
+  lobbyChannel = setInterval(() => { void refresh().catch(console.warn); }, 5000);
 }
 
 // Host calls this periodically to announce room to lobby
-export function announceRoom(roomData) {
-  if (!lobbyChannel) return;
-  lobbyChannel.send({
-    type: 'broadcast',
-    event: 'room-announce',
-    payload: roomData,
-  });
+export function announceRoom() {
+  // Discovery reads owner-protected room records, never untrusted lobby messages.
 }
 
-export async function leaveLobby() {
-  if (lobbyChannel) {
-    await lobbyChannel.unsubscribe();
-    lobbyChannel = null;
-  }
-}
+export async function leaveLobby() { clearInterval(lobbyChannel); lobbyChannel = null; }

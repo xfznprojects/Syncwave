@@ -5,6 +5,11 @@
   "private": true,
   "scripts": {
     "build": "node build.js",
-    "dev": "node build.js && npx serve ."
+    "dev": "npm run build && npx netlify dev",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.9",
+    "esbuild": "^0.28.2"
   }
 }

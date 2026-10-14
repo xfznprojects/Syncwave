@@ -1,3 +1,4 @@
+import { authHeaders } from './security.js';
 import CONFIG from './config.js';
 
 const API = CONFIG.AUDIUS_API_BASE;
@@ -200,7 +201,7 @@ export function filterStreamableTracks(tracks) {
 async function proxyAction(action, params) {
   const res = await fetch('/.netlify/functions/audius-action', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ action, ...params }),
   });
   if (!res.ok) {

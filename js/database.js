@@ -6,7 +6,7 @@ async function request(op, args) {
     backendStatus('database', true);
     return result;
   } catch (error) {
-    backendStatus('database', false);
+    backendStatus('database', false, { status: error.status, message: error.message, operation: op });
     console.warn(`Room service: ${op} failed`, error);
     throw error;
   }

@@ -65,13 +65,13 @@ class Channel {
       }
     };
     socket.onerror = () => socket.close(1000);
-    socket.onclose = () => {
+    socket.onclose = event => {
       if (socket !== this.socket) return;
       clearInterval(this.heartbeat);
       if (this.closed) return;
       this.presence = {};
       for (const h of this.handlers) if (h.type === 'presence') h.callback();
-      backendStatus(this.name, false);
+      backendStatus(this.name, false, { code: event.code, reason: event.reason });
       const delay = Math.min(30000, 1000 * 2 ** this.attempt++) + Math.random() * 500;
       this.retry = setTimeout(() => this.connect(), delay);
     };

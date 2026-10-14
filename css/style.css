@@ -791,6 +791,15 @@ button { cursor: pointer; font-family: inherit; }
   border-radius: var(--radius-sm);
 }
 
+.gif-attribution {
+  display: block;
+  padding: 8px 12px;
+  color: var(--text-secondary, #9ca3af);
+  font-size: 11px;
+  text-align: right;
+  text-decoration: none;
+}
+
 .gif-empty {
   text-align: center;
   color: var(--text-dim);

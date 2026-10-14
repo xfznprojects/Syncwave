@@ -1,5 +1,6 @@
 import { escapeHtml } from './security.js';
-import CONFIG from './config.js';
+import { registerGifShare, searchGifs, getTrendingGifs } from './gifs.js';
+export { searchGifs, getTrendingGifs, getTrendingTerms } from './gifs.js';
 import { broadcast } from './room.js';
 import { getCurrentUser } from './auth.js';
 
@@ -216,64 +217,6 @@ function renderMessage(msg) {
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-// Tenor GIF search
-export async function searchGifs(query) {
-  if (!CONFIG.TENOR_API_KEY || !query.trim()) return [];
-
-  const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${CONFIG.TENOR_API_KEY}&limit=30&media_filter=gif,tinygif`;
-
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map(r => ({
-      id: r.id,
-      url: r.media_formats?.gif?.url || '',
-      preview: r.media_formats?.tinygif?.url || r.media_formats?.gif?.url || '',
-      description: r.content_description || '',
-      dims: r.media_formats?.tinygif?.dims || r.media_formats?.gif?.dims || [200, 200],
-    }));
-  } catch {
-    return [];
-  }
-}
-
-export async function getTrendingGifs() {
-  if (!CONFIG.TENOR_API_KEY) return [];
-
-  const url = `https://tenor.googleapis.com/v2/featured?key=${CONFIG.TENOR_API_KEY}&limit=30&media_filter=gif,tinygif`;
-
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map(r => ({
-      id: r.id,
-      url: r.media_formats?.gif?.url || '',
-      preview: r.media_formats?.tinygif?.url || r.media_formats?.gif?.url || '',
-      description: r.content_description || '',
-      dims: r.media_formats?.tinygif?.dims || r.media_formats?.gif?.dims || [200, 200],
-    }));
-  } catch {
-    return [];
-  }
-}
-
-export async function getTrendingTerms() {
-  if (!CONFIG.TENOR_API_KEY) return [];
-
-  const url = `https://tenor.googleapis.com/v2/trending_terms?key=${CONFIG.TENOR_API_KEY}&limit=10`;
-
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.results || [];
-  } catch {
-    return [];
-  }
-}
-
 export function renderGifPicker(gifs, onSelect) {
   if (!gifPickerEl) return;
 
@@ -286,13 +229,14 @@ export function renderGifPicker(gifs, onSelect) {
     const [w, h] = gif.dims || [200, 200];
     const ratio = w && h ? (w / h).toFixed(3) : '1';
     return `
-    <div class="gif-item" data-url="${escapeHtml(gif.url)}" data-preview="${escapeHtml(gif.preview)}" style="aspect-ratio:${ratio}">
+    <div class="gif-item" data-id="${escapeHtml(gif.id)}" data-url="${escapeHtml(gif.url)}" data-preview="${escapeHtml(gif.preview)}" style="aspect-ratio:${ratio}">
       <img src="${escapeHtml(gif.preview)}" alt="${escapeHtml(gif.description)}" loading="lazy">
     </div>`;
   }).join('');
 
   gifPickerEl.querySelectorAll('.gif-item').forEach(item => {
     item.addEventListener('click', () => {
+      registerGifShare(item.dataset.id, document.getElementById('gif-search-input')?.value || '');
       onSelect(item.dataset.url, item.dataset.preview);
     });
   });

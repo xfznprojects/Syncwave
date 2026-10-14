@@ -1,9 +1,9 @@
 name: Cloudflare checks
 on:
   push:
-    branches: [cloudflare]
+    branches: [main, cloudflare]
   pull_request:
-    branches: [cloudflare]
+    branches: [main, cloudflare]
 permissions:
   contents: read
 jobs:

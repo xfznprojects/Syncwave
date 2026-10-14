@@ -21,11 +21,12 @@ test('build is repeatable, escapes public keys and publishes only public assets'
   const read = file => readFileSync(path.join(root, file), 'utf8');
   const source = read('js/config.js');
   for (const key of ['first-key', "second'key\\with\nnewline"]) {
-    execFileSync(process.execPath, ['build.js'], { cwd: root, env: { ...process.env, AUDIUS_API_KEY: key, AUDIUS_API_SECRET: 'never-publish-this-secret', AUDIUS_BEARER_TOKEN: 'never-publish-this-bearer', TENOR_API_KEY: 'test-tenor' } });
+    execFileSync(process.execPath, ['build.js'], { cwd: root, env: { ...process.env, AUDIUS_API_KEY: key, AUDIUS_API_SECRET: 'never-publish-this-secret', AUDIUS_BEARER_TOKEN: 'never-publish-this-bearer', KLIPY_API_KEY: 'never-publish-this-gif-key' } });
     const built = read('dist/js/config.js');
     assert.ok(built.includes(JSON.stringify(key)));
     assert.ok(!built.includes('never-publish-this-secret'));
     assert.ok(!built.includes('never-publish-this-bearer'));
+    assert.ok(!built.includes('never-publish-this-gif-key'));
     assert.equal(read('js/config.js'), source);
   }
   assert.deepEqual(readdirSync(path.join(root, 'dist')).sort(), ['css', 'index.html', 'js']);

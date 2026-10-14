@@ -2277,8 +2277,8 @@ function setupGifPicker() {
       trendingTermsCache = terms;
       renderTrendingTags(terms);
       renderGifPicker(gifs, onGifSelect);
-    } catch {
-      gifGrid.innerHTML = '<div class="gif-empty">Failed to load GIFs</div>';
+    } catch (error) {
+      gifGrid.innerHTML = '<div class="gif-empty">' + escapeHtml(error.message) + '</div>';
     }
     gifLoading = false;
   }
@@ -2313,8 +2313,8 @@ function setupGifPicker() {
     try {
       const results = await searchGifs(trimmed);
       renderGifPicker(results, onGifSelect);
-    } catch {
-      gifGrid.innerHTML = '<div class="gif-empty">Search failed</div>';
+    } catch (error) {
+      gifGrid.innerHTML = '<div class="gif-empty">' + escapeHtml(error.message) + '</div>';
     }
     gifLoading = false;
   }

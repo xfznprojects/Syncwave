@@ -35,7 +35,6 @@ let config = fs.readFileSync(path.join(__dirname, 'js', 'config.js'), 'utf8');
 
 const replacements = {
   '__AUDIUS_API_KEY__': process.env.AUDIUS_API_KEY || '',
-  '__TENOR_API_KEY__': process.env.TENOR_API_KEY || '',
 };
 
 for (const [placeholder, value] of Object.entries(replacements)) {

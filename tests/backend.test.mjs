@@ -28,7 +28,7 @@ test('Cloudflare backend: persistence, validation, and two-client room communica
   }));
   t.after(() => mf.dispose());
   const db = await mf.getD1Database('DB');
-  for (const file of ['migrations/0001_initial.sql', 'migrations/0002_demo_playlist.sql']) {
+  for (const file of ['migrations/0001_initial.sql', 'migrations/0002_demo_playlist.sql', 'migrations/0003_archive_retired_demo.sql']) {
     for (const statement of readFileSync(file, 'utf8').split(';').filter(s => s.trim())) await db.prepare(statement).run();
   }
   const call = async (op, args = {}, credential = ownerToken) => {
@@ -36,7 +36,7 @@ test('Cloudflare backend: persistence, validation, and two-client room communica
     return { status: res.status, ...(await res.json()) };
   };
   await t.test('persists playlists, room state, permanent status and recent chat', async () => {
-    assert.equal((await call('loadPermanentRooms')).data.length, 4);
+    assert.equal((await call('loadPermanentRooms')).data.length, 3);
     const seeded = (await call('loadRoom', { roomId: '247room4' })).data;
     assert.ok(seeded.playlist.length > 10);
     const tracks = [{ id: 'track', title: "A 'quoted' track" }];
@@ -46,8 +46,9 @@ test('Cloudflare backend: persistence, validation, and two-client room communica
     assert.equal((await call('saveRoom', { room })).data, true);
     assert.deepEqual((await call('loadRoom', { roomId: room.roomId })).data.playback_state, room.playbackState);
     assert.equal((await call('loadActiveRooms')).data[0].room_id, room.roomId);
-    assert.equal((await call('saveRoom', { room: { ...room, roomId: '247room4' } })).status, 403);
-    assert.equal((await call('loadRoom', { roomId: '247room4' })).data.is_permanent, true);
+    assert.equal((await call('saveRoom', { room: { ...room, roomId: '247room2' } })).status, 403);
+    assert.equal((await call('loadRoom', { roomId: '247room2' })).data.is_permanent, true);
+    assert.ok(!(await call('loadInactiveRooms')).data.some(r => r.room_id === '247room4'));
     for (let timestamp = 1; timestamp <= 4; timestamp++) {
       await call('saveChatMessage', { roomId: room.roomId, message: { userId: 'owner', text: `message ${timestamp}`, timestamp } });
     }

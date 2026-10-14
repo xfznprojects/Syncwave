@@ -33,16 +33,16 @@ export async function executeData(db, op, args = {}) {
       return true;
     case 'loadActiveRooms': {
       const cutoff = new Date(Date.now() - 120000).toISOString();
-      const { results } = await db.prepare('SELECT * FROM rooms WHERE user_count > 0 AND last_active_at > ? ORDER BY user_count DESC LIMIT ?')
+      const { results } = await db.prepare('SELECT * FROM rooms WHERE is_archived = 0 AND user_count > 0 AND last_active_at > ? ORDER BY user_count DESC LIMIT ?')
         .bind(cutoff, limit(args.limit, 20)).all();
       return results.map(decode);
     }
     case 'loadPermanentRooms': {
-      const { results } = await db.prepare('SELECT * FROM rooms WHERE is_permanent = 1 ORDER BY room_id').all();
+      const { results } = await db.prepare('SELECT * FROM rooms WHERE is_archived = 0 AND is_permanent = 1 ORDER BY room_id').all();
       return results.map(decode);
     }
     case 'loadInactiveRooms': {
-      const { results } = await db.prepare('SELECT * FROM rooms WHERE is_permanent = 0 AND (user_count = 0 OR last_active_at <= ?) ORDER BY last_active_at DESC LIMIT ?')
+      const { results } = await db.prepare('SELECT * FROM rooms WHERE is_archived = 0 AND is_permanent = 0 AND (user_count = 0 OR last_active_at <= ?) ORDER BY last_active_at DESC LIMIT ?')
         .bind(new Date(Date.now() - 120000).toISOString(), limit(args.limit, 10)).all();
       return results.map(decode);
     }

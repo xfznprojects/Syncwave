@@ -1,4 +1,5 @@
 import { executeData } from './data.mjs';
+import { handleGifs } from './gifs.mjs';
 import { authenticate, authorizeData, ownsRoom, requireUser, AccessError } from './auth.mjs';
 export { RoomChannel } from './realtime.mjs';
 
@@ -68,6 +69,7 @@ export default {
       const { success } = await env.API_LIMIT.limit({ key: request.headers.get('CF-Connecting-IP') || 'local' });
       if (!success) return reply({ error: 'Too many requests. Please try again shortly.' }, 429);
     }
+    if (url.pathname === '/api/gifs') return handleGifs(request, env);
     if (url.pathname === '/api/realtime') {
       if (request.method !== 'GET') return reply({ error: 'Method not allowed' }, 405);
       const channel = url.searchParams.get('channel');

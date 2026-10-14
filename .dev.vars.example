@@ -2,3 +2,4 @@
 # Use the same AUDIUS_API_KEY in .env and here.
 AUDIUS_API_KEY=
 AUDIUS_BEARER_TOKEN=
+KLIPY_API_KEY=

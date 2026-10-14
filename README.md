@@ -1,3 +1,5 @@
+> **Deprecated edition.** This branch preserves the former Netlify/Supabase implementation for reference. The maintained Cloudflare application is on [main](https://github.com/xfznprojects/Syncwave/tree/main), with the live portfolio at [syncwaveproject.pages.dev](https://syncwaveproject.pages.dev/). No new features are developed on this branch.
+
 # Security setup required
 
 Before deploying, follow [the security rollout instructions](docs/security-setup.md).

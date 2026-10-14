@@ -119,8 +119,7 @@ The player initializes independently of the lobby. Live connections use bounded
 exponential reconnect delays, restore presence and request fresh host state.
 Failed database writes are reported; playlists and chat have local fallback copies.
 A visible status banner replaces silent failures, with a retry button for database
-reads. Stale room counts expire from database discovery after two minutes, and a
-daily scheduled task removes chat older than seven days.
+reads. Stale room counts expire from database discovery after two minutes, and chat history is retained without automatic age-based deletion.
 
 Static files are built into `dist/` from an explicit allowlist. Only that directory
 is uploaded, so `.env`, `.dev.vars`, SQL and Worker source cannot be served as assets.

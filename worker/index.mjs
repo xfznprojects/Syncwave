@@ -110,7 +110,4 @@ export default {
       return reply({ error: invalid ? error.message : 'The room service is temporarily unavailable. Please try again.' }, invalid ? 400 : 503);
     }
   },
-  async scheduled(_event, env) {
-    await env.DB.prepare('DELETE FROM chat_messages WHERE created_at < ?').bind(new Date(Date.now() - 7 * 86400000).toISOString()).run();
-  },
 };

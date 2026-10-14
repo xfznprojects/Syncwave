@@ -12,6 +12,8 @@ synchronized playback, shared queues, chat, and audio-reactive visualizers.
 ![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-F38020?logo=cloudflare&logoColor=white)
 ![Audius](https://img.shields.io/badge/Music-Audius-7E1BCC)
 
+![SyncWave listening room with chat, a shared queue, visualizer, playback controls and audio analysis](docs/screenshots/room-player.png)
+
 ## What you can do
 
 - **Listen in sync.** Hosts broadcast playback state; listeners correct drift.

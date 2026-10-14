@@ -1,4 +1,4 @@
 # Worker-only credentials. Copy to .dev.vars for local development.
 # Use the same AUDIUS_API_KEY in .env and here.
 AUDIUS_API_KEY=
-AUDIUS_API_SECRET=
+AUDIUS_BEARER_TOKEN=

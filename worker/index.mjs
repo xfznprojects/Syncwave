@@ -42,11 +42,11 @@ async function audiusAction(request, env) {
   if (!userId || typeof userId !== 'string') return reply({ error: 'Missing userId' }, 400);
   if (['favorite', 'unfavorite', 'repost', 'unrepost'].includes(action) && (!trackId || typeof trackId !== 'string')) return reply({ error: 'Missing trackId' }, 400);
   if (['follow', 'unfollow'].includes(action) && (!targetUserId || typeof targetUserId !== 'string')) return reply({ error: 'Missing targetUserId' }, 400);
-  if (!env.AUDIUS_API_KEY || !env.AUDIUS_API_SECRET) return reply({ error: 'Server misconfigured — missing Audius credentials' }, 500);
+  if (!env.AUDIUS_API_KEY || (!env.AUDIUS_BEARER_TOKEN && !env.AUDIUS_API_SECRET)) return reply({ error: 'Server misconfigured — missing Audius credentials' }, 500);
   try {
     const res = await fetch(`${AUDIUS_API_BASE}${def.path(body)}`, {
       method: def.method,
-      headers: { 'x-api-key': env.AUDIUS_API_KEY, Authorization: `Basic ${btoa(`${env.AUDIUS_API_KEY}:${env.AUDIUS_API_SECRET}`)}` },
+      headers: { 'x-api-key': env.AUDIUS_API_KEY, Authorization: env.AUDIUS_BEARER_TOKEN ? `Bearer ${env.AUDIUS_BEARER_TOKEN}` : `Basic ${btoa(`${env.AUDIUS_API_KEY}:${env.AUDIUS_API_SECRET}`)}` },
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return reply({ error: `Audius API error: ${res.status}`, detail: (await res.text()).slice(0, 8192) }, res.status);

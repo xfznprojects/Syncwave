@@ -58,7 +58,7 @@ The other three rooms start empty, as in the original setup.
 
    ```sh
    npx wrangler secret put AUDIUS_API_KEY
-   npx wrangler secret put AUDIUS_API_SECRET
+   npx wrangler secret put AUDIUS_BEARER_TOKEN
    ```
 
    Wrangler may prompt to create the Worker when storing its first secret.
@@ -79,7 +79,7 @@ The other three rooms start empty, as in the original setup.
 For Git-connected Cloudflare Workers builds, set the build command to
 `npm run build` and deploy command to `npm run deploy`. Configure the public
 `AUDIUS_API_KEY` and `TENOR_API_KEY` in the build environment, and the Audius API key
-and secret separately in the Worker's runtime secrets. The deploy command applies
+and bearer token separately in the Worker's runtime secrets. The deploy command applies
 pending D1 migrations automatically before publishing.
 
 ## Moving existing data and CV links

@@ -12,7 +12,7 @@ test('Cloudflare backend: persistence, validation, and two-client room communica
     modules: true, scriptPath: '.wrangler/test/worker.mjs', compatibilityDate: '2026-10-12',
     compatibilityFlags: ['nodejs_compat'], d1Databases: ['DB'],
     durableObjects: { CHANNELS: { className: 'RoomChannel', useSQLite: true } },
-    bindings: { AUDIUS_API_KEY: 'test-key', AUDIUS_API_SECRET: 'test-secret' },
+    bindings: { AUDIUS_API_KEY: 'test-key', AUDIUS_BEARER_TOKEN: 'test-bearer-token', AUDIUS_API_SECRET: 'legacy-secret' },
     outboundService: async request => {
       upstream.push({ url: request.url, method: request.method, key: request.headers.get('x-api-key'), auth: request.headers.get('Authorization') });
       return Response.json({ data: 'ok' });
@@ -65,7 +65,7 @@ test('Cloudflare backend: persistence, validation, and two-client room communica
       const response = await mf.dispatchFetch('http://local/.netlify/functions/audius-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, userId: 'user', trackId: 'track', targetUserId: 'target' }) });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { data: 'ok' });
-      assert.deepEqual(upstream.at(-1), { url: `https://api.audius.co/v1${paths[action]}?user_id=user`, method: action.startsWith('un') ? 'DELETE' : 'POST', key: 'test-key', auth: `Basic ${Buffer.from('test-key:test-secret').toString('base64')}` });
+      assert.deepEqual(upstream.at(-1), { url: `https://api.audius.co/v1${paths[action]}?user_id=user`, method: action.startsWith('un') ? 'DELETE' : 'POST', key: 'test-key', auth: 'Bearer test-bearer-token' });
     }
   });
   await t.test('presence, playback, chat, isolation, heartbeat, and reconnect', async () => {

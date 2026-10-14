@@ -12,8 +12,6 @@ synchronized playback, shared queues, chat, and audio-reactive visualizers.
 ![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-F38020?logo=cloudflare&logoColor=white)
 ![Audius](https://img.shields.io/badge/Music-Audius-7E1BCC)
 
-![A live SyncWave room with its 3D visualizer, shared queue, chat and audio analysis](docs/screenshots/room-3d.png)
-
 ## What you can do
 
 - **Listen in sync.** Hosts broadcast playback state; listeners correct drift.
@@ -34,19 +32,19 @@ checked on the server using verified Audius identity.
 
 ## A look inside
 
-### Room discovery
+### Room directory
 
 ![SyncWave's live directory with its three permanent listening rooms](docs/screenshots/home.png)
 
-### Bubble visualizer
+### Search and add music
 
-![The alternative 3D bubble visualizer in a live listening room](docs/screenshots/room-bubble.png)
+![Add Song modal with Audius trending tracks, search and URL tabs, plus genre, mood and BPM filters](docs/screenshots/add-song-search.png)
 
-### 2D visualizer
+### Audio analysis
 
-![The 2D bars visualizer with the playlist and audio analysis panels](docs/screenshots/room-2d.png)
+![Close-up of SyncWave's live analysis panel showing BPM, key, loudness, dynamic range and stereo waveform](docs/screenshots/audio-analysis.png)
 
-These are screenshots of the deployed application, rather than design mockups.
+The focused views highlight music discovery and browser-side audio analysis without shrinking them into full-page captures.
 
 ## Live showcase
 

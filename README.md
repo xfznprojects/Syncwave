@@ -1,149 +1,149 @@
-# SyncWave on Cloudflare
+# SyncWave
 
-This is the `cloudflare` edition. GitHub's `main` branch retains the original
-Netlify/Supabase edition. For the fewest manual steps, follow
-[Cloudflare deployment](docs/cloudflare-deployment.md): connect this branch to
-Workers Builds and use `npm run deploy`. The deployment command automatically
-applies D1 migrations before publishing. The database is already provisioned in
-the configured Cloudflare account.
+**Music is better together.** Live listening rooms for the Audius catalog, with
+synchronized playback, shared queues, chat, and audio-reactive visualizers.
 
-SyncWave's Audius music, login, player and visualizers are preserved. Cloudflare
-Workers serves the website and the Audius action proxy, D1 stores room data,
-playlists and chat, and SQLite-backed Durable Objects handle live room connections.
-There is no Supabase or Netlify runtime dependency.
+[**Try the live demo →**](https://syncwaveproject.pages.dev/)
+ · [Chillhop Radio](https://syncwaveproject.pages.dev/#/room/247room1)
+ · [Deployment guide](docs/cloudflare-deployment.md)
+
+![Cloudflare checks](https://github.com/xfznprojects/Syncwave/actions/workflows/cloudflare-checks.yml/badge.svg?branch=main)
+![JavaScript](https://img.shields.io/badge/JavaScript-vanilla-F7DF1E?logo=javascript&logoColor=black)
+![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-F38020?logo=cloudflare&logoColor=white)
+![Audius](https://img.shields.io/badge/Music-Audius-7E1BCC)
+
+![A live SyncWave room with its 3D visualizer, shared queue, chat and audio analysis](docs/screenshots/room-3d.png)
+
+## What you can do
+
+- **Listen in sync.** Hosts broadcast playback state; listeners correct drift.
+  Permanent rooms calculate their shared playback position from timestamps, so
+  they continue when no host is present.
+- **Discover music together.** Search Audius tracks, artists, and playlists;
+  manage a host-controlled queue and request songs as a listener.
+- **Chat while listening.** Text and KLIPY GIF messages share the live room.
+  Signed-in messages are saved in D1 and remain available across visits.
+- **See the sound.** Switch between Three.js wireframe and bubble visualizers,
+  or 2D bars, wave, and circular modes. Inspect a zoomable stereo waveform and
+  browser-side BPM, key, loudness, and dynamic-range estimates.
+- **Use your Audius account.** Log in, create your own room, and favorite or
+  repost tracks and follow artists through your authorized Audius session.
+
+Visitors can listen without signing in. Room ownership and host-only actions are
+checked on the server using verified Audius identity.
+
+## A look inside
+
+### Room discovery
+
+![SyncWave's live directory with its three permanent listening rooms](docs/screenshots/home.png)
+
+### Bubble visualizer
+
+![The alternative 3D bubble visualizer in a live listening room](docs/screenshots/room-bubble.png)
+
+### 2D visualizer
+
+![The 2D bars visualizer with the playlist and audio analysis panels](docs/screenshots/room-2d.png)
+
+These are screenshots of the deployed application, rather than design mockups.
+
+## Live showcase
+
+| Room | Queue | Open |
+| --- | ---: | --- |
+| Chillhop Radio | 128 unique songs from five Chillhop Music playlists | [Listen](https://syncwaveproject.pages.dev/#/room/247room1) |
+| Electronic Vibes | 28 songs | [Listen](https://syncwaveproject.pages.dev/#/room/247room2) |
+| Indie Corner | 30 songs | [Listen](https://syncwaveproject.pages.dev/#/room/247room3) |
+
+The curated queues and restored chat are persisted in the live database. A fresh
+database gets the room schema and starter records; it does not clone the live
+showcase data. The retired 140 room is archived from discovery, with its data
+retained. Chat has no automatic age-based deletion.
+
+## How it works
+
+| Layer | Technology | Responsibility |
+| --- | --- | --- |
+| Browser | Vanilla JavaScript, HTML/CSS, Three.js, Web Audio | Player, visualizers, waveform, room UI |
+| App server | Cloudflare Workers | Public assets, verified identity, fixed database operations, Audius and KLIPY proxies |
+| Live rooms | SQLite-backed Durable Objects and WebSockets | Presence, chat delivery, host commands and room isolation |
+| Storage | Cloudflare D1 | Queues, playlists, room state and chat history |
+| Public address | Cloudflare Pages service binding | `syncwaveproject.pages.dev` forwards to the same Worker and database |
+
+The Pages gateway is deployed once and forwards requests to the current Worker.
+Normal app updates only need a Worker deployment; no second frontend build or
+separate copy of the database is required.
 
 ## Run locally
 
-Use Node.js 22 or newer (tested with Node 24).
+Use Node.js **22 or newer** (CI uses Node 24):
 
 ```sh
 npm ci
 ```
 
-Copy `.env.example` to `.env` and fill in your existing public Audius and Tenor keys.
-Copy `.dev.vars.example` to `.dev.vars` and fill in the existing Audius API key and
-secret. `.env` is for the frontend build; `.dev.vars` supplies the Worker runtime.
-The secret is never included in the public build.
+Copy `.env.example` to `.env` and `.dev.vars.example` to `.dev.vars`, then fill in:
+
+| Variable | `.env` / Cloudflare build | `.dev.vars` / Worker runtime |
+| --- | --- | --- |
+| `AUDIUS_API_KEY` | Public browser key | Same key, stored as a runtime secret |
+| `AUDIUS_BEARER_TOKEN` | Never | Audius backend bearer token |
+| `KLIPY_API_KEY` | Never | KLIPY GIF API key |
+
+Get Audius credentials from [Audius developer settings](https://audius.co/settings)
+and a KLIPY key from the [KLIPY developer portal](https://klipy.com/developers).
+The GIF picker uses KLIPY's Tenor-compatible API and includes its attribution.
+No Tenor, Supabase, or Netlify credentials are required.
 
 ```sh
 npm run db:local
 npm run dev
 ```
 
-Open the localhost URL printed by Wrangler. Hash-based room links continue to work.
-Four permanent demo rooms are seeded, including the existing `140` playlist.
-The other three rooms start empty, as in the original setup.
+Open the localhost URL printed by Wrangler. Browser autoplay rules require a
+click on Play when entering a room.
 
-## Deploy on Cloudflare's free plan
+## Deploy
 
-1. Sign in and prepare the database (safe to repeat):
+The [deployment guide](docs/cloudflare-deployment.md) covers Workers Builds,
+runtime secrets, the Pages address, and Audius origin configuration.
 
-   ```sh
-   npx wrangler login
-   npm run db:setup
-   ```
+```sh
+npx wrangler login
+npm test
+npm run check:deploy
+npm run deploy
+```
 
-   The configured database ID is ready for this account. For a different account,
-   update `account_id` and remove `database_id`; `db:setup` then creates or reuses
-   the database and writes its ID automatically.
+`npm run deploy` builds the public assets, creates or reuses D1 when needed,
+applies pending migrations, and publishes the Worker. Secrets are supplied at
+runtime and excluded from the public build. Use `npm run deploy:pages` only when
+changing the Pages gateway itself.
 
-2. Apply the migrations to the new database:
+For another Cloudflare account, update `account_id` in `wrangler.jsonc` and
+remove its existing `database_id` before provisioning your own database.
 
-   ```sh
-   npm run db:remote
-   ```
+## Checks and operations
 
-3. Set the same existing Audius credentials on the Worker. Enter each value at the
-   interactive prompt; do not put secrets in command arguments or source control.
+`npm test` covers real D1 SQL and separate WebSocket clients in Cloudflare's local
+runtime, including persistence, reconnects, identity and ownership enforcement,
+room isolation, HTML escaping, GIF request validation, and secret-free builds.
+The GIF provider tests use mocked upstream responses; live GIF search also
+requires a valid, activated KLIPY key.
 
-   ```sh
-   npx wrangler secret put AUDIUS_API_KEY
-   npx wrangler secret put AUDIUS_BEARER_TOKEN
-   ```
+`/api/health` checks database availability. `npx wrangler tail` shows Worker errors.
+The UI distinguishes expired logins, denied operations, database failures, request
+limits, and live-connection interruptions. Read [Cloudflare's platform limits](https://developers.cloudflare.com/workers/platform/limits/)
+before using the demo as a high-traffic service.
 
-   Wrangler may prompt to create the Worker when storing its first secret.
-   Keep `.env` populated for the public frontend key and Tenor key when building.
+## Branches
 
-4. Validate and deploy:
+- **`main`** — the canonical Cloudflare application and portfolio documentation.
+- **`cloudflare`** — the existing Cloudflare deployment branch, retained during
+  the production-branch transition.
+- **`netlify-legacy`** — archived Netlify/Supabase edition, preserved for reference.
+  It is deprecated and receives no new features.
 
-   ```sh
-   npm test
-   npm run check:deploy
-   npm run deploy
-   ```
-
-   Use the `workers.dev` URL printed by Wrangler, or attach a custom domain in the
-   Cloudflare dashboard. Ensure the new site origin is permitted by your existing
-   Audius developer-app configuration if it restricts origins.
-
-For Git-connected Cloudflare Workers builds, set the build command to
-`npm run build` and deploy command to `npm run deploy`. Configure the public
-`AUDIUS_API_KEY` and `TENOR_API_KEY` in the build environment, and the Audius API key
-and bearer token separately in the Worker's runtime secrets. The deploy command applies
-pending D1 migrations automatically before publishing.
-
-## Moving existing data and CV links
-
-The included migrations create a fresh database and the demo playlist from the
-repository; they do not copy the live Supabase database. To retain additional room
-playlists or history, export those tables before retiring Supabase. The original
-`setup.sql` and `seed-140-room.sql` are retained as historical source files, not
-Cloudflare setup instructions. Do not run PostgreSQL `setup.sql` against D1.
-
-Keep the existing Netlify deployment until the new URL passes the checks below.
-If your CV uses the Netlify URL, replace that deployment with a small redirect page
-which uses `location.replace('https://YOUR-WORKER.workers.dev/' + location.hash)`.
-Netlify server redirects cannot see the hash-based room route, so preserve it in
-the browser. Then update future CV copies to use the new URL.
-
-## Verify before switching the CV link
-
-- Check `/api/health` returns `{ "ok": true }` (also verifies that tables exist).
-- Open the `140` room as a logged-out visitor and start music using the play button.
-- Log in with Audius and create a room; open it in another browser and check playback
-  position, queue updates, chat/GIFs, listener counts and song requests.
-- Disconnect/reconnect the listener's network and check it rejoins and resynchronizes.
-- Reload and verify saved playlists and chat history remain available.
-- Test favorite/repost/follow with your own Audius account. Those endpoints and
-  credentials are unchanged; the old `/.netlify/functions/audius-action` path is
-  handled by the Worker for compatibility with the unchanged Audius client module.
-
-`npm test` exercises D1 SQL in Cloudflare's local runtime and separate WebSocket
-clients, including validation, room isolation, heartbeat and rejoining. It also
-checks repeatable builds and that secrets are excluded. It does not log in to a
-real Audius account or play audio in a real browser.
-
-## Availability and operations
-
-The player initializes independently of the lobby. Live connections use bounded
-exponential reconnect delays, restore presence and request fresh host state.
-Failed database writes are reported; playlists and chat have local fallback copies.
-A visible status banner replaces silent failures, with a retry button for database
-reads. Stale room counts expire from database discovery after two minutes, and chat history is retained without automatic age-based deletion.
-
-Static files are built into `dist/` from an explicit allowlist. Only that directory
-is uploaded, so `.env`, `.dev.vars`, SQL and Worker source cannot be served as assets.
-The database API accepts fixed operations and bound parameters, with same-origin
-checks and per-IP request throttling. Room messages have size/rate limits and
-host-only playback/moderation events.
-
-The Worker verifies Audius ID tokens using Audius's /users/verify_token endpoint
-and checks the token's app key and expiration. Playlist reads/writes and persisted
-chat require login. Room writes and host commands require the verified owner;
-new room IDs must match that user's Audius handle. Guests can listen and join live
-chat with server-assigned guest identities. Guest chat is not persisted.
-Permanent rooms without an assigned host_user_id remain read-only; assign their
-owner through an administrator-controlled migration if editing is needed.
-Existing unowned rooms also require an administrator-controlled ownership migration.
-WebSocket identities are verified on connection and expire after at most one hour;
-reconnections verify the token again. No credentials are placed in WebSocket URLs.
-HTML interpolation escapes quotes as well as markup characters.
-
-Use `npx wrangler tail` for failures and Cloudflare's dashboard for usage. Free plans
-have usage limits and can reject requests when those limits are reached. Always-on
-music rooms calculate playback from timestamps in the browser; they do not require
-an always-running backend timer. No new hosting removes the need to handle outages.
-
-Official references: [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/),
-[D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/),
-[Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+The project now uses a single maintained Cloudflare edition. The old Netlify
+deployment is no longer the portfolio link.

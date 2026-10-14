@@ -1,74 +1,118 @@
-# Cloudflare deployment
+# Deploy SyncWave on Cloudflare
 
-The `cloudflare` GitHub branch is the Workers/D1/Durable Objects edition. `main`
-keeps the original Netlify/Supabase edition. Use **Workers**, not Pages.
+Public URL: **https://syncwaveproject.pages.dev/**.
+The Worker remains `syncwave`; Pages provides a stable free address through an
+HTTP service binding. Both addresses use the same D1 database and Durable Objects.
+No purchased domain, DNS zone, Supabase project, or Netlify deployment is needed.
 
-## One-time dashboard setup
+## Worker builds
 
-1. In Cloudflare, open **Workers & Pages → Create application → Import a repository**
-   (or the equivalent Git import option). Connect GitHub as `xfznprojects`, select
-   `xfznprojects/Syncwave`. The creation screen may use the GitHub default branch
-   without offering a branch selector. Keep Path at `/`; it is a folder path.
-   After the project exists, open **Settings → Build → Branch control**, select
-   **cloudflare**, and save. An initial build of `main` will fail because the
-   Netlify edition has no `deploy` script. Start a fresh build from `cloudflare`
-   (for example, by pushing a commit); retrying that initial build can reuse `main`.
-2. Set the Worker name to **syncwave**, root directory to the repository root,
-   build command to **npm run build**, and deploy command to **npm run deploy**.
-   Use Node **22 or newer** for the build.
-3. Add **AUDIUS_API_KEY** and **TENOR_API_KEY** to the **build environment**,
-   copying their existing values from Netlify's environment settings.
-   Audius's API key and Tenor's key are public browser keys; the Audius bearer token
-   must never be a public build variable.
-4. The build/deployment API token must have **Workers Scripts: Edit** and
-   **D1: Edit** for this account. If Cloudflare's generated build token lacks D1
-   permissions, edit that token in **My Profile → API Tokens** to add
-   **Account → D1 → Edit**, or select a custom build token with these permissions.
-5. Deploy. `npm run deploy` builds public assets, creates/reuses D1 if necessary,
-   applies pending migrations, and publishes the Worker. Later pushes to
-   `cloudflare` redeploy automatically through Cloudflare Workers Builds.
-6. In the Worker's **Settings → Variables and Secrets**, add **AUDIUS_API_KEY**
-   and **AUDIUS_BEARER_TOKEN** as runtime secrets, then save/deploy the changes.
-   Use the same Audius API key as in the build environment. Tenor is only needed
-   in the build environment. Existing runtime secrets survive future deployments.
+Connect `xfznprojects/Syncwave` to Cloudflare Workers Builds. Use:
 
-The local Cloudflare login is independent of Workers Builds credentials. Do not
-copy the local OAuth token into GitHub or Cloudflare build settings.
+| Setting | Value |
+| --- | --- |
+| Worker name | `syncwave` |
+| Production branch | `main` |
+| Root directory | `/` |
+| Build command | `npm run build` |
+| Deploy command | `npm run deploy` |
+| Preview builds | Disabled until separate preview resources are configured |
 
-Only three app variable names are needed:
+An existing project that was created against `cloudflare` must switch its
+production branch in **Settings → Build → Branch control** after `main` is
+promoted. Retrying an older build reuses its original commit; start a new build
+from the intended branch instead.
 
-| Name | Build environment | Worker runtime |
+The build API token needs **Workers Scripts: Edit** and **D1: Edit** for this
+account. The deployment command automatically applies pending D1 migrations.
+The repository contains this deployment's account and database IDs, which are
+resource identifiers rather than secrets.
+
+## Required variables
+
+Only these three names are used:
+
+| Name | Build variables | Runtime variables and secrets |
 | --- | --- | --- |
-| `AUDIUS_API_KEY` | Yes | Secret |
-| `TENOR_API_KEY` | Yes, for GIF search | No |
+| `AUDIUS_API_KEY` | Yes | Secret, same value |
 | `AUDIUS_BEARER_TOKEN` | No | Secret |
+| `KLIPY_API_KEY` | No | Secret |
 
-Do not copy `ROOM_HOST_HANDLE`, `SUPABASE_URL`, or
-`SUPABASE_ANON_KEY`; this edition does not use them.
+Build variables are under **Settings → Builds**. Runtime secrets are under
+**Settings → Runtime variables and secrets**. They are separate environments:
+the frontend's build key is not automatically available to the Worker.
+Store the runtime key as a **Secret** so Wrangler deployments preserve it.
 
-## Local deployment alternative
+Get the key and backend bearer token from the Audius developer app. Add
+`KLIPY_API_KEY` using a key created at https://klipy.com/developers; follow KLIPY's
+production-access process. The key stays on the Worker, and changing it does not
+require a frontend rebuild. A missing key shows an explicit unavailable message
+in the GIF picker instead of pretending there are no search results.
 
-After `npm ci` and `npx wrangler login`, put the public keys in `.env`:
+Remove obsolete `TENOR_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and
+`ROOM_HOST_HANDLE` from build settings when convenient. `AUDIUS_API_SECRET` is
+only a compatibility fallback for older Audius credentials; the current setup
+uses `AUDIUS_BEARER_TOKEN` instead.
 
-```dotenv
-AUDIUS_API_KEY=your_existing_key
-TENOR_API_KEY=your_existing_key
+## Local deployment
+
+```sh
+npm ci
+npx wrangler login
 ```
 
-Run `npm run deploy`. Add runtime secrets in the Cloudflare dashboard as above,
-or run `npx wrangler secret put AUDIUS_API_KEY` and
-`npx wrangler secret put AUDIUS_BEARER_TOKEN` (interactive prompts).
+Put the public Audius key in `.env`. Put development runtime credentials in
+`.dev.vars`; these files are excluded from Git. For production, enter values
+at the prompts:
 
-`npm run db:setup` only prepares D1 and applies migrations; it does not publish
-the site. `npm run check:deploy` validates packaging without publishing.
+```sh
+npx wrangler secret put AUDIUS_API_KEY
+npx wrangler secret put AUDIUS_BEARER_TOKEN
+npx wrangler secret put KLIPY_API_KEY
+npm test
+npm run check:deploy
+npm run deploy
+```
 
-## Verify the new URL
+For a new account, change `account_id` in `wrangler.jsonc` and remove the existing
+`database_id`. `npm run db:setup` creates/reuses D1 and applies migrations without
+publishing; `npm run deploy` performs that setup and then deploys.
 
-Open `/api/health` on the Worker URL; it must return `{"ok":true}`. Test the
-`140` room, Audius login, playback, chat and synchronization in two browsers.
-Allow the new origin in the Audius developer-app configuration if required.
-Keep Netlify running until these checks pass. Existing live Supabase data is not
-copied automatically; only the included demo data is seeded.
+## Free Pages address
 
-References: https://developers.cloudflare.com/workers/ci-cd/builds/configuration/
-and https://developers.cloudflare.com/workers/configuration/secrets/
+The `syncwaveproject` Pages project is already provisioned. Its configuration is
+in `pages/wrangler.jsonc`; `pages/public/_worker.js` forwards original requests to
+the `syncwave` Worker through the `SYNCWAVE` service binding. It forwards HTML,
+assets, API requests and WebSocket upgrades, preserving the public request origin.
+No duplicate app credentials belong in Pages.
+
+```sh
+npm run deploy:pages
+```
+
+The helper runs from the Pages directory and explicitly selects Pages because
+recent Wrangler versions can redirect agent-invoked Pages commands to Workers.
+Normal app changes deploy only the Worker; the Pages gateway automatically serves
+that version. To reproduce this setup in another account, create the Pages
+project in the dashboard first and adjust its name in `pages/wrangler.jsonc`.
+
+If your Audius app restricts allowed origins or redirects, add
+**https://syncwaveproject.pages.dev** to its developer settings. Keep the current
+Worker origin allowed while migrating existing links.
+
+## Verify
+
+- `/api/health` returns `{"ok":true}` on the Pages address.
+- Chillhop Radio opens at `/#/room/247room1` with its saved queue and chat.
+- Two browsers receive presence and playback updates over the same room channel.
+- Audius login and favorite/repost/follow work with your authorized app.
+- KLIPY trending GIFs, search, preview and sending work after the runtime key is set.
+- Reloaded queues and chat remain available. Chat has no automatic expiry.
+
+The live curated playlists and imported Supabase chat are database content, not
+part of a fresh install's seeds. Keep database backups before replacing data.
+The retired 140 room is archived from discovery without deleting its history.
+
+References: [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/),
+[Pages service bindings](https://developers.cloudflare.com/pages/functions/bindings/#service-bindings),
+[KLIPY migration](https://klipy.com/migrate).

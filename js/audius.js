@@ -194,19 +194,39 @@ export function filterStreamableTracks(tracks) {
   return { playable, gated };
 }
 
-// ─── AUTHENTICATED WRITE OPERATIONS (via Netlify Function proxy) ──────
-// The API secret never leaves the server. All write operations are proxied
-// through /.netlify/functions/audius-action which holds the secret server-side.
+// ─── AUTHENTICATED WRITE OPERATIONS (via the Cloudflare Worker) ──────
+// The Worker verifies the user's Audius session and uses its server-side
+// bearer token to perform these actions on the user's behalf.
+
+export function describeAudiusActionFailure(action, status, error) {
+  const detail = typeof error === 'string' ? error : '';
+  if (detail === 'Invalid login' || detail === 'Login expired' || detail === 'Log in with Audius first') {
+    return 'Your Audius login expired. Log in again and retry.';
+  }
+  if (detail === 'Login verification unavailable') return 'Audius login verification is temporarily unavailable. Retry shortly.';
+  if (detail.startsWith('Server misconfigured')) return 'Audius actions are not configured on the Cloudflare Worker.';
+  if (detail === 'Audius API error: 401') return 'Audius rejected the Worker credentials. Check AUDIUS_API_KEY and AUDIUS_BEARER_TOKEN in Worker secrets.';
+  if (status === 401) return 'Your Audius login was rejected. Log in again and retry.';
+  if (status === 403) return 'Audius denied this action for your account or this track.';
+  if (status === 429) return 'Audius is rate limiting actions right now. Retry shortly.';
+  if (status >= 500) return 'Audius is temporarily unavailable. Retry shortly.';
+  return `Could not ${action} on Audius${status ? ` (HTTP ${status})` : ''}.`;
+}
 
 async function proxyAction(action, params) {
-  const res = await fetch('/.netlify/functions/audius-action', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ action, ...params }),
-  });
+  let res;
+  try {
+    res = await fetch('/api/audius-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ action, ...params }),
+    });
+  } catch {
+    throw new Error('Could not reach the Cloudflare Worker. Check your connection and retry.');
+  }
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Action "${action}" failed: ${res.status} ${body}`);
+    const body = await res.json().catch(() => ({}));
+    throw new Error(describeAudiusActionFailure(action, res.status, body.error));
   }
   return res.json();
 }

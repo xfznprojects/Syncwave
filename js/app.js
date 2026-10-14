@@ -1363,7 +1363,7 @@ async function handleLike() {
     updateSocialButtons(track);
   } catch (e) {
     console.warn('Like action failed:', e);
-    showToast('Failed — check your Audius API secret');
+    showToast(e.message || 'Could not update Audius favorite. Retry shortly.');
   } finally {
     btn.classList.remove('loading');
   }
@@ -1393,7 +1393,7 @@ async function handleRepost() {
     updateSocialButtons(track);
   } catch (e) {
     console.warn('Repost action failed:', e);
-    showToast('Failed — check your Audius API secret');
+    showToast(e.message || 'Could not update Audius repost. Retry shortly.');
   } finally {
     btn.classList.remove('loading');
   }
@@ -1424,7 +1424,7 @@ async function handleFollow() {
     updateSocialButtons(track);
   } catch (e) {
     console.warn('Follow action failed:', e);
-    showToast('Failed — check your Audius API secret');
+    showToast(e.message || 'Could not update Audius follow. Retry shortly.');
   } finally {
     btn.classList.remove('loading');
   }

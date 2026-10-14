@@ -1,4 +1,5 @@
 import { executeData } from './data.mjs';
+import { authenticate, authorizeData, ownsRoom, requireUser, AccessError } from './auth.mjs';
 export { RoomChannel } from './realtime.mjs';
 
 const AUDIUS_API_BASE = 'https://api.audius.co/v1';
@@ -35,8 +36,10 @@ export async function readJson(request, maxBytes = 262144) {
 
 // Same Audius endpoints, authentication and response behavior as the Netlify function.
 async function audiusAction(request, env) {
+  const user = requireUser(await authenticate(request, env));
   const body = await readJson(request, 8192);
   const { action, userId, trackId, targetUserId } = body;
+  if (userId !== user.userId) throw new AccessError('Invalid action user');
   const def = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : null;
   if (!def) return reply({ error: `Unknown action: ${action}` }, 400);
   if (!userId || typeof userId !== 'string') return reply({ error: 'Missing userId' }, 400);
@@ -69,7 +72,20 @@ export default {
       if (request.method !== 'GET') return reply({ error: 'Method not allowed' }, 405);
       const channel = url.searchParams.get('channel');
       if (!channel || channel.length > 165 || !(channel === 'lobby' || (channel.startsWith('room:') && channel.length > 5))) return reply({ error: 'Invalid channel' }, 400);
-      return env.CHANNELS.getByName(channel).fetch(request);
+      try {
+        const protocols = (request.headers.get('Sec-WebSocket-Protocol') || '').split(',').map(p => p.trim());
+        const tokenProtocol = protocols.find(p => p.startsWith('audius.'));
+        const user = await authenticate(request, env, tokenProtocol ? tokenProtocol.slice(7) : undefined);
+        const canHost = channel.startsWith('room:') && await ownsRoom(env.DB, channel.slice(5), user);
+        const headers = new Headers(request.headers);
+        // Replace caller-controlled headers at the Worker/DO boundary.
+        headers.set('X-Syncwave-Identity', JSON.stringify({ user, canHost }));
+        headers.delete('Sec-WebSocket-Protocol');
+        if (protocols.includes('syncwave')) headers.set('Sec-WebSocket-Protocol', 'syncwave');
+        return await env.CHANNELS.getByName(channel).fetch(new Request(request, { headers }));
+      } catch (error) {
+        return reply({ error: error.status ? error.message : 'Room authentication unavailable' }, error.status || 503);
+      }
     }
     if (url.pathname === '/api/health') {
       try {
@@ -85,8 +101,10 @@ export default {
       let body;
       try { body = await readJson(request); } catch { return reply({ error: 'Invalid JSON or request too large' }, 400); }
       if (!body || typeof body.op !== 'string' || !body.args || typeof body.args !== 'object' || Array.isArray(body.args)) return reply({ error: 'Invalid operation' }, 400);
-      return reply({ data: await executeData(env.DB, body.op, body.args) });
+      const args = await authorizeData(env.DB, body.op, body.args, await authenticate(request, env));
+      return reply({ data: await executeData(env.DB, body.op, args) });
     } catch (error) {
+      if (error.status) return reply({ error: error.message }, error.status);
       const invalid = /^(Invalid|Unknown|Missing)/.test(error.message);
       if (!invalid) console.error(JSON.stringify({ event: 'backend-error', path: url.pathname, message: error.message }));
       return reply({ error: invalid ? error.message : 'The room service is temporarily unavailable. Please try again.' }, invalid ? 400 : 503);

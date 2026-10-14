@@ -54,8 +54,9 @@ export async function executeData(db, op, args = {}) {
       const values = [id(r.roomId), r.hostName || null, r.hostHandle || null, r.hostAvatar || null, r.hostUserId || null,
         pack(r.currentTrack), Math.max(0, Number(r.userCount) || 0), pack(r.playlist, []), pack(r.mutedUsers, []), pack(r.bannedUsers, []), pack(r.playbackState), now];
       // Permanent status is managed through migrations, never by a browser write.
-      await db.prepare(`INSERT INTO rooms(${fields.join(',')}) VALUES (${fields.map(() => '?').join(',')}) ON CONFLICT(room_id) DO UPDATE SET ${fields.slice(1).map(f => `${f}=excluded.${f}`).join(',')}`)
+      const result = await db.prepare(`INSERT INTO rooms(${fields.join(',')}) VALUES (${fields.map(() => '?').join(',')}) ON CONFLICT(room_id) DO UPDATE SET ${fields.slice(1).map(f => `${f}=excluded.${f}`).join(',')} WHERE rooms.host_user_id = excluded.host_user_id`)
         .bind(...values).run();
+      if (!result.meta.changes) throw new Error('Invalid room owner');
       return true;
     }
     case 'updateRoomUserCount':

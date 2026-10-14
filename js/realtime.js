@@ -1,4 +1,5 @@
 import { backendStatus } from './backend.js';
+import { authHeaders } from './security.js';
 
 // A small channel adapter keeps room/playback callbacks independent of the transport.
 class Channel {
@@ -30,7 +31,8 @@ class Channel {
     const url = new URL('/api/realtime', window.location.origin);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('channel', this.name);
-    const socket = this.socket = new WebSocket(url);
+    this.connectionToken = authHeaders().Authorization?.slice(7) || null;
+    const socket = this.socket = new WebSocket(url, this.connectionToken ? ['syncwave', `audius.${this.connectionToken}`] : ['syncwave']);
     socket.onopen = () => {
       if (this.closed || socket !== this.socket) return;
       this.attempt = 0;
@@ -75,6 +77,13 @@ class Channel {
     };
   }
   send(message) {
+    const token = authHeaders().Authorization?.slice(7) || null;
+    if (token !== this.connectionToken) {
+      clearInterval(this.heartbeat);
+      if (this.socket) { this.socket.onclose = null; this.socket.close(1000); }
+      this.connect();
+      return false;
+    }
     // Do not replay stale playback/chat messages after an outage.
     if (this.socket?.readyState !== WebSocket.OPEN) return false;
     this.socket.send(JSON.stringify({ type: 'broadcast', event: message.event, payload: message.payload }));

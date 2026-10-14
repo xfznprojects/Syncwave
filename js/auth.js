@@ -62,7 +62,7 @@ export function loginWithAudius() {
     }
 
     function onMessage(event) {
-      if (event.origin !== 'https://audius.co') return;
+      if (event.origin !== 'https://audius.co' || event.source !== popup) return;
 
       window.removeEventListener('message', onMessage);
       clearInterval(checkClosed);
@@ -80,7 +80,7 @@ export function loginWithAudius() {
         return;
       }
 
-      // Decode JWT payload (no verification needed — Audius signed it)
+      // Display claims only. The Worker independently verifies every credential.
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         currentUser = {

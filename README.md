@@ -128,11 +128,17 @@ The database API accepts fixed operations and bound parameters, with same-origin
 checks and per-IP request throttling. Room messages have size/rate limits and
 host-only playback/moderation events.
 
-This migration preserves the original client-declared Audius identity model;
-database ownership is not cryptographically verified by the server. It is an
-anonymous collaborative demo, not a private-data application. Server-verified
-Audius identity and stronger ownership rules would be a separate authentication
-change; no login behavior was changed here.
+The Worker verifies Audius ID tokens using Audius's /users/verify_token endpoint
+and checks the token's app key and expiration. Playlist reads/writes and persisted
+chat require login. Room writes and host commands require the verified owner;
+new room IDs must match that user's Audius handle. Guests can listen and join live
+chat with server-assigned guest identities. Guest chat is not persisted.
+Permanent rooms without an assigned host_user_id remain read-only; assign their
+owner through an administrator-controlled migration if editing is needed.
+Existing unowned rooms also require an administrator-controlled ownership migration.
+WebSocket identities are verified on connection and expire after at most one hour;
+reconnections verify the token again. No credentials are placed in WebSocket URLs.
+HTML interpolation escapes quotes as well as markup characters.
 
 Use `npx wrangler tail` for failures and Cloudflare's dashboard for usage. Free plans
 have usage limits and can reject requests when those limits are reached. Always-on

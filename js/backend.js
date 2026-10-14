@@ -1,6 +1,7 @@
+import { authHeaders } from './security.js';
 export async function dataRequest(op, args = {}) {
   const response = await fetch('/api/data', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ op, args }), signal: AbortSignal.timeout(10000),
   });
   const body = await response.json();

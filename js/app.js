@@ -163,6 +163,8 @@ function navigate(path) {
   window.location.hash = path;
 }
 
+window.addEventListener('backend-retry', () => { void renderFullDirectory(); });
+
 // ─── INIT ───────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -170,7 +172,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   enrichUserProfile(); // fire-and-forget: fetch $AUDIO balance for badge tier
   renderAuthUI();
   initPlayer();
-  await joinLobby();
+  // Discovery must not prevent player/UI initialization during a connection outage.
+  void joinLobby().catch(error => console.warn('Lobby connection failed:', error));
 
   // Lobby updates → render room directory
   onLobbyUpdate(rooms => {
@@ -564,7 +567,7 @@ async function enterRoom(roomId) {
   setOnUnmuteUser(handleUnmuteUser);
   clearChat();
 
-  // Load prior chat history for this room (from Supabase with localStorage fallback)
+  // Load prior chat history for this room (from D1 with localStorage fallback)
   // skipRateLimit: true because these are saved DB records, not live floods
   try {
     const chatHistory = await dbLoadChatHistory(roomId);
@@ -623,6 +626,7 @@ async function enterRoom(roomId) {
     }
   } catch (e) {
     showToast('Failed to join room: ' + e.message);
+    await leaveRoom();
     return;
   }
 

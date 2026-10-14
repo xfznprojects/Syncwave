@@ -1,370 +1,96 @@
-import { getSupabaseClient } from './supabase-client.js';
+import { dataRequest, backendStatus } from './backend.js';
 
-function getClient() {
-  return getSupabaseClient();
-}
-
-// Unwrap double-stringified JSON values (caused by prior JSON.stringify + JSONB column)
-function parseJsonField(value, fallback) {
-  if (value == null) return fallback;
-  let parsed = value;
-  // Unwrap up to 2 layers of stringification
-  for (let i = 0; i < 2 && typeof parsed === 'string'; i++) {
-    try { parsed = JSON.parse(parsed); } catch { return fallback; }
+async function request(op, args) {
+  try {
+    const result = await dataRequest(op, args);
+    backendStatus('database', true);
+    return result;
+  } catch (error) {
+    backendStatus('database', false);
+    console.warn(`Room service: ${op} failed`, error);
+    throw error;
   }
-  return parsed ?? fallback;
 }
-
-// ─── PLAYLIST PERSISTENCE ─────────────────────────────────
-
-let saveTimeout = null;
-
-export async function savePlaylist(userId, tracks) {
-  // Debounce: wait 1 second after last call
-  clearTimeout(saveTimeout);
-  return new Promise((resolve) => {
-    saveTimeout = setTimeout(async () => {
-      try {
-        const client = getClient();
-        const { error } = await client
-          .from('playlists')
-          .upsert({
-            user_id: userId,
-            name: 'Default',
-            tracks: JSON.stringify(tracks),
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'user_id,name' });
-
-        if (error) throw error;
-        resolve(true);
-      } catch (e) {
-        console.warn('Failed to save playlist to Supabase:', e);
-        // Fallback: save to localStorage
-        try {
-          localStorage.setItem('syncwave_playlist', JSON.stringify(tracks));
-        } catch { /* ignore */ }
-        resolve(false);
-      }
-    }, 1000);
+function readLocal(key, fallback = null) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+}
+function writeLocal(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage may be full */ }
+}
+// Resolve every pending caller when writes are coalesced.
+function debounceSave(delay, save) {
+  let timer;
+  let waiters = [];
+  const flush = async value => {
+    clearTimeout(timer);
+    const pending = waiters;
+    waiters = [];
+    const result = await save(value);
+    pending.forEach(resolve => resolve(result));
+    return result;
+  };
+  const enqueue = value => new Promise(resolve => {
+    waiters.push(resolve);
+    clearTimeout(timer);
+    timer = setTimeout(() => { void flush(value); }, delay);
   });
+  return { enqueue, flush };
 }
-
+const playlistSaves = new Map();
+export function savePlaylist(userId, tracks) {
+  writeLocal('syncwave_playlist', tracks);
+  if (!playlistSaves.has(userId)) playlistSaves.set(userId, debounceSave(1000, async tracks => {
+    try { return await request('savePlaylist', { userId, tracks }); } catch { return false; }
+  }));
+  return playlistSaves.get(userId).enqueue(tracks);
+}
 export async function loadPlaylist(userId) {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('playlists')
-      .select('tracks')
-      .eq('user_id', userId)
-      .eq('name', 'Default')
-      .single();
-
-    if (error) throw error;
-    if (data?.tracks) {
-      const tracks = parseJsonField(data.tracks, []);
-      return tracks;
-    }
-  } catch (e) {
-    console.warn('Failed to load playlist from Supabase:', e);
-    // Fallback: try localStorage
-    try {
-      const local = localStorage.getItem('syncwave_playlist');
-      if (local) return JSON.parse(local);
-    } catch { /* ignore */ }
-  }
-  return null;
+  try { return await request('loadPlaylist', { userId }) ?? readLocal('syncwave_playlist'); }
+  catch { return readLocal('syncwave_playlist'); }
 }
-
-// ─── ROOM PERSISTENCE ────────────────────────────────────
-
-let roomSaveTimeout = null;
-
-function buildRoomRow(roomData) {
-  return {
-    room_id: roomData.roomId,
-    host_name: roomData.hostName || null,
-    host_handle: roomData.hostHandle || null,
-    host_avatar: roomData.hostAvatar || null,
-    host_user_id: roomData.hostUserId || null,
-    current_track: roomData.currentTrack || null,
-    user_count: roomData.userCount || 0,
-    playlist: roomData.playlist || [],
-    muted_users: roomData.mutedUsers || [],
-    banned_users: roomData.bannedUsers || [],
-    playback_state: roomData.playbackState || null,
-    last_active_at: new Date().toISOString(),
-  };
+const roomSaves = new Map();
+function saver(roomId) {
+  if (!roomSaves.has(roomId)) roomSaves.set(roomId, debounceSave(2000, async room => {
+    try { return await request('saveRoom', { room }); } catch { return false; }
+  }));
+  return roomSaves.get(roomId);
 }
-
-export async function saveRoom(roomData) {
-  // Debounce: wait 2 seconds after last call
-  clearTimeout(roomSaveTimeout);
-  return new Promise((resolve) => {
-    roomSaveTimeout = setTimeout(async () => {
-      try {
-        const client = getClient();
-        const { error } = await client
-          .from('rooms')
-          .upsert(buildRoomRow(roomData), { onConflict: 'room_id' });
-
-        if (error) throw error;
-        resolve(true);
-      } catch (e) {
-        console.warn('Failed to save room to Supabase:', e);
-        resolve(false);
-      }
-    }, 2000);
-  });
-}
-
-// Immediate (non-debounced) save — used on room exit to ensure state is persisted
-export async function saveRoomImmediate(roomData) {
-  clearTimeout(roomSaveTimeout); // cancel any pending debounced save
-  try {
-    const client = getClient();
-    const { error } = await client
-      .from('rooms')
-      .upsert(buildRoomRow(roomData), { onConflict: 'room_id' });
-    if (error) throw error;
-    return true;
-  } catch (e) {
-    console.warn('Failed to save room to Supabase:', e);
-    return false;
-  }
-}
-
+export function saveRoom(room) { return saver(room.roomId).enqueue(room); }
+export function saveRoomImmediate(room) { return saver(room.roomId).flush(room); }
 export async function updateRoomUserCount(roomId, userCount) {
-  try {
-    const client = getClient();
-    await client
-      .from('rooms')
-      .update({ user_count: userCount, last_active_at: new Date().toISOString() })
-      .eq('room_id', roomId);
-  } catch (e) {
-    console.warn('Failed to update room user count:', e);
-  }
+  try { return await request('updateRoomUserCount', { roomId, userCount }); } catch { return false; }
 }
-
 export async function updateRoomCurrentTrack(roomId, currentTrack) {
-  try {
-    const client = getClient();
-    await client
-      .from('rooms')
-      .update({ current_track: currentTrack, last_active_at: new Date().toISOString() })
-      .eq('room_id', roomId);
-  } catch (e) {
-    console.warn('Failed to update room current track:', e);
-  }
+  try { return await request('updateRoomCurrentTrack', { roomId, currentTrack }); } catch { return false; }
 }
-
-export async function loadActiveRooms(limit = 20) {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('rooms')
-      .select('*')
-      .gt('user_count', 0)
-      .order('user_count', { ascending: false })
-      .limit(limit);
-
-    if (error) throw error;
-    return (data || []).map(mapRoomRow);
-  } catch (e) {
-    console.warn('Failed to load active rooms:', e);
-    return [];
-  }
-}
-
-export async function loadPermanentRooms() {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('rooms')
-      .select('*')
-      .eq('is_permanent', true)
-      .order('room_id', { ascending: true });
-
-    if (error) throw error;
-    return (data || []).map(mapRoomRow);
-  } catch (e) {
-    console.warn('Failed to load permanent rooms:', e);
-    return [];
-  }
-}
-
-export async function loadInactiveRooms(limit = 10) {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('rooms')
-      .select('*')
-      .eq('user_count', 0)
-      .order('last_active_at', { ascending: false })
-      .limit(limit);
-
-    if (error) throw error;
-    return (data || []).map(mapRoomRow);
-  } catch (e) {
-    console.warn('Failed to load inactive rooms:', e);
-    return [];
-  }
-}
-
-export async function loadRoomPlaylist(roomId) {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('rooms')
-      .select('playlist')
-      .eq('room_id', roomId)
-      .single();
-
-    if (error) throw error;
-    if (data?.playlist) {
-      const pl = parseJsonField(data.playlist, null);
-      return Array.isArray(pl) ? pl : null;
-    }
-  } catch (e) {
-    console.warn('Failed to load room playlist:', e);
-  }
-  return null;
-}
-
-export async function loadRoom(roomId) {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('rooms')
-      .select('*')
-      .eq('room_id', roomId)
-      .single();
-
-    if (error) throw error;
-    return data ? mapRoomRow(data) : null;
-  } catch (e) {
-    console.warn('Failed to load room:', e);
-    return null;
-  }
-}
-
-export async function loadRoomBannedUsers(roomId) {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('rooms')
-      .select('banned_users')
-      .eq('room_id', roomId)
-      .single();
-
-    if (error) throw error;
-    if (data?.banned_users) {
-      const arr = parseJsonField(data.banned_users, []);
-      return Array.isArray(arr) ? arr : [];
-    }
-  } catch (e) {
-    console.warn('Failed to load room banned users:', e);
-  }
-  return [];
-}
-
-export async function loadRoomMutedUsers(roomId) {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('rooms')
-      .select('muted_users')
-      .eq('room_id', roomId)
-      .single();
-
-    if (error) throw error;
-    if (data?.muted_users) {
-      const arr = parseJsonField(data.muted_users, []);
-      return Array.isArray(arr) ? arr : [];
-    }
-  } catch (e) {
-    console.warn('Failed to load room muted users:', e);
-  }
-  return [];
-}
-
-function mapRoomRow(row) {
+function mapRoom(r) {
   return {
-    roomId: row.room_id,
-    hostName: row.host_name,
-    hostHandle: row.host_handle,
-    hostAvatar: row.host_avatar,
-    hostUserId: row.host_user_id,
-    currentTrack: parseJsonField(row.current_track, null),
-    userCount: row.user_count,
-    playlist: parseJsonField(row.playlist, []),
-    mutedUsers: parseJsonField(row.muted_users, []),
-    bannedUsers: parseJsonField(row.banned_users, []),
-    isPermanent: row.is_permanent,
-    playbackState: parseJsonField(row.playback_state, null),
-    lastActiveAt: row.last_active_at,
-    createdAt: row.created_at,
+    roomId: r.room_id, hostName: r.host_name, hostHandle: r.host_handle,
+    hostAvatar: r.host_avatar, hostUserId: r.host_user_id, currentTrack: r.current_track,
+    userCount: r.user_count, playlist: r.playlist || [], mutedUsers: r.muted_users || [],
+    bannedUsers: r.banned_users || [], isPermanent: r.is_permanent,
+    playbackState: r.playback_state, lastActiveAt: r.last_active_at, createdAt: r.created_at,
   };
 }
-
-// ─── CHAT PERSISTENCE ────────────────────────────────────
-
-export async function saveChatMessage(roomId, message) {
-  try {
-    const client = getClient();
-    await client.from('chat_messages').insert({
-      room_id: roomId,
-      user_id: message.userId || 'anon',
-      handle: message.handle || 'Anonymous',
-      name: message.name || 'Anonymous',
-      avatar_url: message.avatar || null,
-      text: message.text || '',
-      gif_url: message.gifUrl || null,
-      preview_url: message.previewUrl || null,
-      timestamp: message.timestamp,
-    });
-  } catch (e) {
-    console.warn('Failed to save chat message:', e);
-    // Fallback: localStorage
-    try {
-      const key = `syncwave_chat_history_${roomId}`;
-      let history = JSON.parse(localStorage.getItem(key) || '[]');
-      history.push(message);
-      if (history.length > 50) history = history.slice(-50);
-      localStorage.setItem(key, JSON.stringify(history));
-    } catch { /* ignore */ }
-  }
+async function list(op, limit) {
+  try { return (await request(op, { limit })).map(mapRoom); } catch { return []; }
 }
-
+export function loadActiveRooms(limit = 20) { return list('loadActiveRooms', limit); }
+export function loadPermanentRooms() { return list('loadPermanentRooms'); }
+export function loadInactiveRooms(limit = 10) { return list('loadInactiveRooms', limit); }
+export async function loadRoom(roomId) {
+  try { const row = await request('loadRoom', { roomId }); return row ? mapRoom(row) : null; }
+  catch { return null; }
+}
+export async function loadRoomPlaylist(roomId) { return (await loadRoom(roomId))?.playlist ?? null; }
+export async function loadRoomBannedUsers(roomId) { return (await loadRoom(roomId))?.bannedUsers ?? []; }
+export async function loadRoomMutedUsers(roomId) { return (await loadRoom(roomId))?.mutedUsers ?? []; }
+export async function saveChatMessage(roomId, message) {
+  const key = `syncwave_chat_history_${roomId}`;
+  writeLocal(key, [...readLocal(key, []), message].slice(-50));
+  try { return await request('saveChatMessage', { roomId, message }); } catch { return false; }
+}
 export async function loadChatHistory(roomId, limit = 50) {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('chat_messages')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('timestamp', { ascending: true })
-      .limit(limit);
-
-    if (error) throw error;
-    if (data && data.length > 0) {
-      return data.map(row => ({
-        userId: row.user_id,
-        handle: row.handle,
-        name: row.name,
-        avatar: row.avatar_url,
-        text: row.text,
-        gifUrl: row.gif_url,
-        previewUrl: row.preview_url,
-        timestamp: row.timestamp,
-      }));
-    }
-  } catch (e) {
-    console.warn('Failed to load chat from Supabase:', e);
-    // Fallback: localStorage
-    try {
-      const key = `syncwave_chat_history_${roomId}`;
-      return JSON.parse(localStorage.getItem(key) || '[]');
-    } catch { return []; }
-  }
-  return [];
+  try { return await request('loadChatHistory', { roomId, limit }); }
+  catch { return readLocal(`syncwave_chat_history_${roomId}`, []); }
 }

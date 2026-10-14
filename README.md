@@ -1,179 +1,144 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/Audius-7E1BCC?style=for-the-badge&logo=audius&logoColor=white" alt="Audius">
-  <img src="https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase">
-  <img src="https://img.shields.io/badge/Three.js-000000?style=for-the-badge&logo=threedotjs&logoColor=white" alt="Three.js">
-  <img src="https://img.shields.io/badge/Netlify-00C7B7?style=for-the-badge&logo=netlify&logoColor=white" alt="Netlify">
-</p>
+# SyncWave on Cloudflare
 
-<h1 align="center">
-  <br>
-  SyncWave
-  <br>
-  <sub><sup>Social Listening Rooms for Audius</sup></sub>
-</h1>
+This is the `cloudflare` edition. GitHub's `main` branch retains the original
+Netlify/Supabase edition. For the fewest manual steps, follow
+[Cloudflare deployment](docs/cloudflare-deployment.md): connect this branch to
+Workers Builds and use `npm run deploy`. The deployment command automatically
+applies D1 migrations before publishing. The database is already provisioned in
+the configured Cloudflare account.
 
-<p align="center">
-  <b>Listen together. Stay in sync. No downloads.</b>
-  <br>
-  A real-time social listening platform where groups hear the same music at the same time — powered by the Audius music network.
-</p>
+SyncWave's Audius music, login, player and visualizers are preserved. Cloudflare
+Workers serves the website and the Audius action proxy, D1 stores room data,
+playlists and chat, and SQLite-backed Durable Objects handle live room connections.
+There is no Supabase or Netlify runtime dependency.
 
-<p align="center">
-  <a href="#features">Features</a> &bull;
-  <a href="#tech-stack">Tech Stack</a> &bull;
-  <a href="#getting-started">Getting Started</a> &bull;
-  <a href="#deployment">Deployment</a> &bull;
-  <a href="#247-rooms">24/7 Rooms</a>
-</p>
+## Run locally
 
----
+Use Node.js 22 or newer (tested with Node 24).
 
-## Features
-
-### Synchronized Playback
-
-- **Host Sync** — the room host broadcasts playback state every 3 seconds; listeners auto-correct drift exceeding 500ms
-- **Deterministic Sync** — when no host is present (24/7 rooms or when the host leaves), all clients independently calculate the exact same playback position from a shared reference timestamp using math — no coordination needed
-- **Seamless Handoff** — deterministic sync automatically defers when a live host is broadcasting, and resumes the instant the host disconnects
-
-### Audio Analysis Engine
-
-Real-time pro audio metrics displayed in the Analysis panel:
-
-| Metric | Method |
-|--------|--------|
-| **BPM** | Energy envelope autocorrelation on a 20-second rolling buffer (30–200 BPM range) |
-| **Key** | Chromagram from FFT bins correlated against 24 Krumhansl-Kessler profiles (major + minor) |
-| **LUFS** | K-weighted loudness approximation on 3-second sliding windows |
-| **DR** | Dynamic range from peak-to-RMS ratio |
-
-### Dual Visualizers
-
-- **3D Sphere** — Three.js wireframe sphere with vertex displacement driven by frequency data, particle system (800–2000 particles), orbital camera controls, and glow effects
-- **2D Canvas** — three switchable modes:
-  - **Bars** — frequency spectrum with cyan-to-magenta gradient and mirror reflection
-  - **Wave** — smooth frequency waveform with gradient fill
-  - **Circular** — radial 360-degree frequency display with center pulse
-
-### Stereo Waveform
-
-- Left and right audio channels rendered as mirrored waveforms (top = L, bottom = R)
-- Frequency-based hue coloring (warm tones for bass, cool tones for highs)
-- Click or drag to seek
-- Zoom in/out (1.0x – 4.0x)
-
-### Live Chat with GIFs
-
-- Real-time messaging via Supabase Realtime broadcasts
-- **GIF Picker** — Tenor API integration with search, trending tags, and grid preview
-- Chat history persisted to Supabase (loads for late joiners)
-- Full XSS sanitization on all incoming messages
-
-### Anti-Spam & Moderation
-
-- Rate limiting: 5 messages / 10s, 3 GIFs / 20s, 600ms minimum gap
-- Duplicate detection (last 5 messages, 30-second window)
-- Content rules: character spam, word repetition, excessive caps, link limits
-- Escalating cooldowns: 2s → 5s → 15s → 30s → 60s
-- Host tools: **mute**, **kick**, and **ban** users via right-click context menu
-
-### Song Requests
-
-- Non-host listeners can submit song requests
-- Host sees a notification badge and can approve or reject each request
-- Approved tracks are added directly to the queue
-
-### Social Actions
-
-- **Like**, **Repost**, and **Follow** — directly from the player bar
-- Authenticated through a Netlify Function proxy (API secret never touches the browser)
-- Visual state feedback (magenta heart, green repost, cyan follow)
-
-### Queue Management
-
-- Add tracks from search, URL, or requests
-- Drag-to-reorder
-- Shuffle mode
-- Queue persists to Supabase
-
-### Room Discovery
-
-- **24/7 Rooms** — permanent broadcast rooms that always appear, with deterministic playback that loops continuously
-- **Active Rooms** — sorted by listener count, updated in real-time via lobby broadcasts
-- **Recent Rooms** — archived rooms sorted by last activity
-- Room cards show host info, listener count, and currently playing track
-
-### Search & Discovery
-
-- **Trending** — weekly trending tracks from Audius
-- **Search** — keyword search
-- **URL Import** — paste any Audius track, playlist, or profile URL
-- **My Tracks** — your own uploads (when logged in)
-- **Favorites** — your liked tracks (when logged in)
-
-### Authentication
-
-- Audius OAuth popup flow
-- Session persists in localStorage across refreshes
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| **Music API** | [Audius](https://audius.co) — decentralized music streaming |
-| **Realtime** | [Supabase Realtime](https://supabase.com) — presence, broadcasts, and database |
-| **3D Graphics** | [Three.js](https://threejs.org) — WebGL audio-reactive visualizer |
-| **GIFs** | [Tenor API](https://tenor.com) — search and trending GIFs |
-| **Hosting** | [Netlify](https://netlify.com) — static hosting + serverless functions |
-| **Audio** | Web Audio API — FFT analysis, stereo splitting, audio graph |
-| **Font** | [JetBrains Mono](https://www.jetbrains.com/lp/mono/) via Google Fonts |
-
-## Getting Started
-
-### Prerequisites
-
-- A [Supabase](https://supabase.com) project (free tier works)
-- An [Audius Developer App](https://audius.co/settings/developer-apps) (API key + secret)
-- A [Tenor API key](https://console.cloud.google.com) (for GIF search)
-- [Node.js](https://nodejs.org) (for the build script)
-
-
-## Deployment
-
-### Netlify (Recommended)
-
-1. Push to GitHub
-2. Connect the repo in [Netlify](https://app.netlify.com)
-3. Set environment variables in **Site Settings → Environment Variables**:
-   - `AUDIUS_API_KEY`
-   - `AUDIUS_API_SECRET`
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `TENOR_API_KEY`
-4. Deploy — Netlify runs `node build.js` automatically
-
-The `netlify.toml` is already configured:
-
-```toml
-[build]
-  command = "node build.js"
-  publish = "."
-  functions = "netlify/functions"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+```sh
+npm ci
 ```
 
+Copy `.env.example` to `.env` and fill in your existing public Audius and Tenor keys.
+Copy `.dev.vars.example` to `.dev.vars` and fill in the existing Audius API key and
+secret. `.env` is for the frontend build; `.dev.vars` supplies the Worker runtime.
+The secret is never included in the public build.
 
-## 24/7 Rooms
+```sh
+npm run db:local
+npm run dev
+```
 
-SyncWave supports permanent rooms that play continuously — even with zero listeners. The playlist loops forever using deterministic time-based calculation.
+Open the localhost URL printed by Wrangler. Hash-based room links continue to work.
+Four permanent demo rooms are seeded, including the existing `140` playlist.
+The other three rooms start empty, as in the original setup.
 
+## Deploy on Cloudflare's free plan
 
-## License
+1. Sign in and prepare the database (safe to repeat):
 
-This project was built for the [Audius Hackathon](https://audius.co). All music is streamed from the Audius network.
+   ```sh
+   npx wrangler login
+   npm run db:setup
+   ```
 
----
+   The configured database ID is ready for this account. For a different account,
+   update `account_id` and remove `database_id`; `db:setup` then creates or reuses
+   the database and writes its ID automatically.
+
+2. Apply the migrations to the new database:
+
+   ```sh
+   npm run db:remote
+   ```
+
+3. Set the same existing Audius credentials on the Worker. Enter each value at the
+   interactive prompt; do not put secrets in command arguments or source control.
+
+   ```sh
+   npx wrangler secret put AUDIUS_API_KEY
+   npx wrangler secret put AUDIUS_API_SECRET
+   ```
+
+   Wrangler may prompt to create the Worker when storing its first secret.
+   Keep `.env` populated for the public frontend key and Tenor key when building.
+
+4. Validate and deploy:
+
+   ```sh
+   npm test
+   npm run check:deploy
+   npm run deploy
+   ```
+
+   Use the `workers.dev` URL printed by Wrangler, or attach a custom domain in the
+   Cloudflare dashboard. Ensure the new site origin is permitted by your existing
+   Audius developer-app configuration if it restricts origins.
+
+For Git-connected Cloudflare Workers builds, set the build command to
+`npm run build` and deploy command to `npm run deploy`. Configure the public
+`AUDIUS_API_KEY` and `TENOR_API_KEY` in the build environment, and the Audius API key
+and secret separately in the Worker's runtime secrets. The deploy command applies
+pending D1 migrations automatically before publishing.
+
+## Moving existing data and CV links
+
+The included migrations create a fresh database and the demo playlist from the
+repository; they do not copy the live Supabase database. To retain additional room
+playlists or history, export those tables before retiring Supabase. The original
+`setup.sql` and `seed-140-room.sql` are retained as historical source files, not
+Cloudflare setup instructions. Do not run PostgreSQL `setup.sql` against D1.
+
+Keep the existing Netlify deployment until the new URL passes the checks below.
+If your CV uses the Netlify URL, replace that deployment with a small redirect page
+which uses `location.replace('https://YOUR-WORKER.workers.dev/' + location.hash)`.
+Netlify server redirects cannot see the hash-based room route, so preserve it in
+the browser. Then update future CV copies to use the new URL.
+
+## Verify before switching the CV link
+
+- Check `/api/health` returns `{ "ok": true }` (also verifies that tables exist).
+- Open the `140` room as a logged-out visitor and start music using the play button.
+- Log in with Audius and create a room; open it in another browser and check playback
+  position, queue updates, chat/GIFs, listener counts and song requests.
+- Disconnect/reconnect the listener's network and check it rejoins and resynchronizes.
+- Reload and verify saved playlists and chat history remain available.
+- Test favorite/repost/follow with your own Audius account. Those endpoints and
+  credentials are unchanged; the old `/.netlify/functions/audius-action` path is
+  handled by the Worker for compatibility with the unchanged Audius client module.
+
+`npm test` exercises D1 SQL in Cloudflare's local runtime and separate WebSocket
+clients, including validation, room isolation, heartbeat and rejoining. It also
+checks repeatable builds and that secrets are excluded. It does not log in to a
+real Audius account or play audio in a real browser.
+
+## Availability and operations
+
+The player initializes independently of the lobby. Live connections use bounded
+exponential reconnect delays, restore presence and request fresh host state.
+Failed database writes are reported; playlists and chat have local fallback copies.
+A visible status banner replaces silent failures, with a retry button for database
+reads. Stale room counts expire from database discovery after two minutes, and a
+daily scheduled task removes chat older than seven days.
+
+Static files are built into `dist/` from an explicit allowlist. Only that directory
+is uploaded, so `.env`, `.dev.vars`, SQL and Worker source cannot be served as assets.
+The database API accepts fixed operations and bound parameters, with same-origin
+checks and per-IP request throttling. Room messages have size/rate limits and
+host-only playback/moderation events.
+
+This migration preserves the original client-declared Audius identity model;
+database ownership is not cryptographically verified by the server. It is an
+anonymous collaborative demo, not a private-data application. Server-verified
+Audius identity and stronger ownership rules would be a separate authentication
+change; no login behavior was changed here.
+
+Use `npx wrangler tail` for failures and Cloudflare's dashboard for usage. Free plans
+have usage limits and can reject requests when those limits are reached. Always-on
+music rooms calculate playback from timestamps in the browser; they do not require
+an always-running backend timer. No new hosting removes the need to handle outages.
+
+Official references: [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/),
+[D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/),
+[Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/).

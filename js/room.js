@@ -1,4 +1,4 @@
-import { getSupabaseClient } from './supabase-client.js';
+import { getRealtimeClient } from './realtime.js';
 
 let currentChannel = null;
 let currentRoomId = null;
@@ -14,14 +14,15 @@ const listeners = {
   onRequestResponse: null,
   onPresenceChange: null,
   onKick: null,
+  onBan: null,
 };
 
 export function onRoomEvent(event, callback) {
   listeners[event] = callback;
 }
 
-function getSupabase() {
-  return getSupabaseClient();
+function getRealtime() {
+  return getRealtimeClient();
 }
 
 export function getRoomId() {
@@ -68,7 +69,7 @@ export async function joinRoom(roomId, user) {
 }
 
 async function joinChannel(roomId, user) {
-  const client = getSupabase();
+  const client = getRealtime();
 
   currentChannel = client.channel(`room:${roomId}`, {
     config: {
@@ -108,6 +109,10 @@ async function joinChannel(roomId, user) {
 
   currentChannel.on('broadcast', { event: 'kick' }, ({ payload }) => {
     if (listeners.onKick) listeners.onKick(payload);
+  });
+
+  currentChannel.on('broadcast', { event: 'ban' }, ({ payload }) => {
+    if (listeners.onBan) listeners.onBan(payload);
   });
 
   currentChannel.on('broadcast', { event: 'request-state' }, ({ payload }) => {
@@ -161,7 +166,7 @@ export function onLobbyUpdate(callback) {
 }
 
 export async function joinLobby() {
-  const client = getSupabase();
+  const client = getRealtime();
 
   lobbyChannel = client.channel('lobby', {
     config: {

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Build script: replaces __PLACEHOLDER__ values in js/config.js with environment variables.
-// Reads from process.env (Netlify injects these) or from a local .env file.
+// Publish only public assets. Keep source config intact for repeatable builds.
 
 const fs = require('fs');
 const path = require('path');
@@ -21,22 +20,30 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const configPath = path.join(__dirname, 'js', 'config.js');
-let config = fs.readFileSync(configPath, 'utf8');
+const outputDir = path.join(__dirname, 'dist');
+// Refuse to follow a redirected output directory when cleaning generated assets.
+if (fs.existsSync(outputDir)) {
+  const actual = fs.realpathSync(outputDir);
+  const expected = path.join(fs.realpathSync(__dirname), 'dist');
+  if (actual.toLowerCase() !== expected.toLowerCase()) throw new Error('dist must be inside this project');
+  fs.rmSync(outputDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+fs.mkdirSync(outputDir, { recursive: true });
+fs.copyFileSync(path.join(__dirname, 'index.html'), path.join(outputDir, 'index.html'));
+for (const dir of ['js', 'css']) fs.cpSync(path.join(__dirname, dir), path.join(outputDir, dir), { recursive: true });
+let config = fs.readFileSync(path.join(__dirname, 'js', 'config.js'), 'utf8');
 
 const replacements = {
   '__AUDIUS_API_KEY__': process.env.AUDIUS_API_KEY || '',
-  '__SUPABASE_URL__': process.env.SUPABASE_URL || '',
-  '__SUPABASE_ANON_KEY__': process.env.SUPABASE_ANON_KEY || '',
   '__TENOR_API_KEY__': process.env.TENOR_API_KEY || '',
 };
 
 for (const [placeholder, value] of Object.entries(replacements)) {
-  config = config.replace(placeholder, value);
+  config = config.replace(`'${placeholder}'`, JSON.stringify(value));
 }
 
-fs.writeFileSync(configPath, config, 'utf8');
+fs.writeFileSync(path.join(outputDir, 'js', 'config.js'), config, 'utf8');
 
-console.log('Build complete — config.js updated with environment variables.');
+console.log('Build complete — public assets written to dist/.');
 const keys = Object.entries(replacements).map(([k, v]) => `  ${k}: ${v ? 'set' : 'MISSING'}`);
 console.log(keys.join('\n'));

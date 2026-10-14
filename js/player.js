@@ -624,7 +624,7 @@ export async function handleSync(data) {
       seekWhenReady(expectedTime);
     }
   } else if (!data.isPlaying && data.currentTime !== undefined) {
-    audio.currentTime = data.currentTime;
+    seekWhenReady(data.currentTime);
   }
 }
 

@@ -910,8 +910,11 @@ button { cursor: pointer; font-family: inherit; }
 
 /* ─── PLAYER BAR (inline in center panel) ────────────────── */
 .player-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 1.25fr) minmax(120px, 1fr);
   align-items: center;
+  container-name: playerbar;
+  container-type: inline-size;
   padding: 25px 25px;
   gap: 14px;
   background: rgba(5, 5, 16, 0.95);
@@ -926,9 +929,11 @@ button { cursor: pointer; font-family: inherit; }
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 140px;
-  max-width: 300px;
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: none;
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
 }
 .player-bar-artwork-wrap {
   width: 48px;
@@ -949,13 +954,50 @@ button { cursor: pointer; font-family: inherit; }
   min-width: 0;
   flex: 1;
 }
+.np-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Social action buttons (like, repost, follow) */
 .social-actions {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+  position: absolute;
+  left: 58px;
+  bottom: calc(100% + 8px);
+  z-index: 110;
+  padding: 5px;
+  background: rgba(5, 5, 16, 0.98);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), var(--glow-accent);
+}
+.player-bar-info:hover + .social-actions:not(.hidden),
+.player-bar-left:focus-within .social-actions:not(.hidden),
+.player-bar-left.actions-open .social-actions:not(.hidden) {
+  display: flex;
+}
+.btn-track-actions {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--text-dim);
+}
+.btn-track-actions:hover,
+.btn-track-actions:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
 }
 .btn-social {
   background: none;
@@ -1036,19 +1078,16 @@ button { cursor: pointer; font-family: inherit; }
 }
 
 .player-bar-center {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  position: static;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  max-width: 600px;
-  pointer-events: none;
-}
-.player-bar-center > * {
-  pointer-events: auto;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  grid-column: 2;
+  grid-row: 1;
 }
 
 /* Controls */
@@ -1098,16 +1137,20 @@ button { cursor: pointer; font-family: inherit; }
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-width: 0;
 }
 .progress-time {
   font-size: 11px;
   color: var(--text-dim);
-  min-width: 36px;
+  flex: 0 0 36px;
+  min-width: 0;
   text-align: center;
   font-family: var(--font-mono);
 }
 .progress-bar {
   flex: 1;
+  min-width: 0;
+  width: auto;
   height: 4px;
   background: var(--bg-input);
   border-radius: 2px;
@@ -1146,11 +1189,12 @@ button { cursor: pointer; font-family: inherit; }
 }
 
 .player-bar-right {
-  min-width: 140px;
-  flex-shrink: 0;
+  min-width: 0;
   display: flex;
   justify-content: flex-end;
-  margin-left: auto;
+  margin-left: 0;
+  grid-column: 3;
+  grid-row: 1;
 }
 
 /* Volume */
@@ -2178,10 +2222,9 @@ button { cursor: pointer; font-family: inherit; }
     pointer-events: auto;
   }
   .player-bar-right { margin-left: 0; min-width: auto; }
-  .player-bar-left { min-width: 80px; max-width: 140px; }
+  .player-bar-left { min-width: 0; max-width: none; }
   .player-bar-artwork-wrap { width: 40px; height: 40px; }
   .player-bar-artwork { width: 40px; height: 40px; }
-  .social-actions { display: none; }
   .chat-input-area { min-height: 60px; }
   .volume-control { display: none; }
 
@@ -2206,6 +2249,44 @@ button { cursor: pointer; font-family: inherit; }
   .header-room-title { max-width: 120px; font-size: 12px; }
   .listener-count-header { font-size: 11px; }
   .room-grid { grid-template-columns: 1fr; }
+}
+
+/* Keep the timeline inside its own player column. Narrow center panels use two
+   rows so song info and volume never collide with the transport controls. */
+@container playerbar (max-width: 760px) {
+  .player-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 10px 14px;
+    gap: 8px 14px;
+  }
+  .player-bar-left { grid-column: 1; grid-row: 1; }
+  .player-bar-center {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    gap: 4px;
+  }
+  .player-bar-right {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .btn-track-actions:not(.hidden) { display: inline-flex; }
+  .social-actions:not(.hidden) { left: auto; right: 0; bottom: calc(100% + 6px); }
+  .progress-time { flex-basis: 34px; font-size: 10px; }
+}
+
+@container playerbar (max-width: 420px) {
+  .player-bar { padding: 8px 10px; gap: 6px 8px; }
+  .player-bar-left { gap: 7px; }
+  .player-bar-artwork-wrap,
+  .player-bar-artwork { width: 36px; height: 36px; }
+  .np-title { font-size: 12px; }
+  .np-artist { font-size: 10px; }
+  .player-controls { gap: 7px; }
+  .btn-playpause { width: 36px; height: 36px; }
+  .progress-area { gap: 5px; }
+  .progress-time { flex-basis: 30px; font-size: 9px; }
 }
 
 /* ─── FOOTER ────────────────────────────────────────────── */

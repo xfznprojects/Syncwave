@@ -16,6 +16,30 @@ let shuffleMode = false;
 let startedAt = 0; // timestamp when track started playing
 let syncInterval = null;
 
+// Prefer the host's audio element position over its wall clock. Different
+// devices can have clocks that disagree by enough to make listeners seek back.
+export function resolveSyncTargetPosition(data, now = Date.now()) {
+  if (typeof data?.currentTime === 'number' && Number.isFinite(data.currentTime) && data.currentTime >= 0) {
+    return data.currentTime;
+  }
+  if (typeof data?.startedAt === 'number' && Number.isFinite(data.startedAt) && data.startedAt > 0) {
+    return Math.max(0, (now - data.startedAt) / 1000);
+  }
+  return null;
+}
+
+function seekWhenReady(position) {
+  if (!audio || !Number.isFinite(position) || position < 0) return;
+  const targetAudio = audio;
+  const apply = () => {
+    if (audio !== targetAudio || targetAudio.readyState < 1) return;
+    if (Number.isFinite(targetAudio.duration) && position >= targetAudio.duration) return;
+    try { targetAudio.currentTime = position; } catch { /* media is not seekable yet */ }
+  };
+  if (targetAudio.readyState >= 1) apply();
+  else targetAudio.addEventListener('loadedmetadata', apply, { once: true });
+}
+
 // Callbacks
 const listeners = {
   onTrackChange: null,
@@ -228,6 +252,7 @@ export async function playTrack(track) {
     broadcast('track-change', {
       track: serializeTrack(track),
       startedAt,
+      currentTime: audio.currentTime || 0,
     });
   }
 }
@@ -592,11 +617,11 @@ export async function handleSync(data) {
   }
 
   // Correct drift
-  if (data.isPlaying && data.startedAt) {
-    const expectedTime = (Date.now() - data.startedAt) / 1000;
-    const drift = Math.abs(audio.currentTime - expectedTime);
+  if (data.isPlaying) {
+    const expectedTime = resolveSyncTargetPosition(data);
+    const drift = expectedTime === null ? 0 : Math.abs(audio.currentTime - expectedTime);
     if (drift > CONFIG.DRIFT_THRESHOLD_MS / 1000) {
-      audio.currentTime = expectedTime;
+      seekWhenReady(expectedTime);
     }
   } else if (!data.isPlaying && data.currentTime !== undefined) {
     audio.currentTime = data.currentTime;
@@ -608,11 +633,11 @@ export async function handleTrackChange(data) {
   if (getIsHost()) return;
   lastHostSyncTime = Date.now();
   if (data.track) {
-    await playTrack(data.track);
-    if (data.startedAt) {
-      const elapsed = (Date.now() - data.startedAt) / 1000;
-      if (audio && elapsed > 0) audio.currentTime = elapsed;
-    }
+    // A host sends a sync snapshot and a track-change for the same transition.
+    // Sync may already have loaded this track; don't reload and restart it.
+    if (!currentTrack || currentTrack.id !== data.track.id) await playTrack(data.track);
+    const position = resolveSyncTargetPosition(data);
+    if (position !== null && position > 0) seekWhenReady(position);
   }
   if (data.queue) {
     queue = data.queue;

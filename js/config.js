@@ -6,7 +6,7 @@ const CONFIG = {
   AUDIUS_API_KEY: '__AUDIUS_API_KEY__',
   AUDIUS_API_BASE: 'https://api.audius.co/v1',
   SYNC_INTERVAL_MS: 3000,
-  DRIFT_THRESHOLD_MS: 500,
+  DRIFT_THRESHOLD_MS: 1200,
 };
 
 export default CONFIG;

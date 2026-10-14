@@ -1296,6 +1296,8 @@ function renderNowPlaying(track) {
 
 function updateSocialButtons(track) {
   const wrap = document.getElementById('social-actions');
+  const trigger = document.getElementById('btn-track-actions');
+  const playerInfo = document.querySelector('.player-bar-left');
   const likeBtn = document.getElementById('btn-like');
   const repostBtn = document.getElementById('btn-repost');
   const followBtn = document.getElementById('btn-follow');
@@ -1305,9 +1307,13 @@ function updateSocialButtons(track) {
   // Show when a track is playing (even for guests — they get a login prompt on click)
   if (!track) {
     wrap.classList.add('hidden');
+    trigger?.classList.add('hidden');
+    playerInfo?.classList.remove('actions-open');
+    trigger?.setAttribute('aria-expanded', 'false');
     return;
   }
   wrap.classList.remove('hidden');
+  trigger?.classList.remove('hidden');
 
   // Update liked state
   const isLiked = likedTracks.has(track.id);
@@ -1333,10 +1339,29 @@ function setupSocialButtons() {
   const likeBtn = document.getElementById('btn-like');
   const repostBtn = document.getElementById('btn-repost');
   const followBtn = document.getElementById('btn-follow');
+  const trigger = document.getElementById('btn-track-actions');
+  const playerInfo = document.querySelector('.player-bar-left');
 
   if (likeBtn) likeBtn.addEventListener('click', handleLike);
   if (repostBtn) repostBtn.addEventListener('click', handleRepost);
   if (followBtn) followBtn.addEventListener('click', handleFollow);
+  if (trigger && playerInfo) {
+    trigger.addEventListener('click', () => {
+      const open = playerInfo.classList.toggle('actions-open');
+      trigger.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', event => {
+      if (playerInfo.contains(event.target)) return;
+      playerInfo.classList.remove('actions-open');
+      trigger.setAttribute('aria-expanded', 'false');
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      playerInfo.classList.remove('actions-open');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.blur();
+    });
+  }
 }
 
 async function handleLike() {

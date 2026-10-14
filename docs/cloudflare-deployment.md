@@ -7,7 +7,12 @@ keeps the original Netlify/Supabase edition. Use **Workers**, not Pages.
 
 1. In Cloudflare, open **Workers & Pages → Create application → Import a repository**
    (or the equivalent Git import option). Connect GitHub as `xfznprojects`, select
-   `xfznprojects/Syncwave`, and select the **cloudflare** production branch.
+   `xfznprojects/Syncwave`. The creation screen may use the GitHub default branch
+   without offering a branch selector. Keep Path at `/`; it is a folder path.
+   After the project exists, open **Settings → Build → Branch control**, select
+   **cloudflare**, and save. An initial build of `main` will fail because the
+   Netlify edition has no `deploy` script. Start a fresh build from `cloudflare`
+   (for example, by pushing a commit); retrying that initial build can reuse `main`.
 2. Set the Worker name to **syncwave**, root directory to the repository root,
    build command to **npm run build**, and deploy command to **npm run deploy**.
    Use Node **22 or newer** for the build.
